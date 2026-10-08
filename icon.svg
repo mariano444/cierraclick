@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0b1220"/>
+  <path fill="#22c55e" d="M256 83c95.5 0 173 69.2 173 154.5S351.5 392 256 392c-18.8 0-36.9-2.7-53.6-7.8L102 429l35.5-85.1C108.9 316 83 278.2 83 237.5 83 152.2 160.5 83 256 83Z"/>
+  <text x="256" y="283" fill="#0b1220" font-family="Arial, sans-serif" font-size="126" font-weight="700" text-anchor="middle">CC</text>
+</svg>
