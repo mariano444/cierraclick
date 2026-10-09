@@ -84,8 +84,7 @@ const heat=p=>{
   if(p.status==="accepted") return p.depositPaidAt?"💰 Seña cobrada":p.proofSentAt?"💸 Avisó el pago: verificá":"✅ Aceptada · seña pendiente";
   if(p.status==="expired") return "⛔ Vencida";
   const h=(Date.now()-(p.lastViewedAt||0))/36e5;
-  if((p.views||0)>=3||((p.views||0)>0&&h<24)) return "🔥 Interés alto";
-  return (p.views||0)>0?"🟡 Interés medio":"⚪ Sin abrir";
+  const sc=leadScore(p); return sc>=60?"🔥 Interés alto":sc>=25?"🟡 Interés medio":(p.views||0)>0?"🟠 Interés bajo":"⚪ Sin abrir";
 };
 const TEMPLATES={
   auto:{name:"🚗 Autos / concesionaria",items:[
@@ -159,7 +158,7 @@ const Auth={
 const Cloud={
   get on(){return Auth.remote;},
   async rpc(name,args={}){const {data,error}=await (await Auth.client()).rpc(name,args);if(error)throw error;return data;},
-  proposal(row){return {...row,client:{name:row.clients?.name||"Cliente",phone:row.clients?.phone||""},expiresAt:row.expires_at,cashDiscount:Number(row.cash_discount||0),depositPct:Number(row.deposit_pct||0),chosenOption:row.chosen_option_id,createdAt:row.created_at,acceptedAt:row.accepted_at,lastViewedAt:row.last_viewed_at,lastFollowUpAt:row.last_follow_up_at,proofSentAt:row.proof_sent_at,depositPaidAt:row.deposit_paid_at,depositStarted:row.deposit_started||0,followUps:row.follow_ups||0,options:(row.proposal_options||[]).sort((a,b)=>a.position-b.position).map(o=>({id:o.id,name:o.name,price:Number(o.price),discountType:o.discount_type,discountValue:Number(o.discount_value),description:o.description,hasInstallments:o.has_installments,installments:o.installments,hasWarranty:o.has_warranty,warranty:o.warranty,features:o.features,terms:o.terms,recommended:o.recommended}))};},
+  proposal(row){return {...row,lostReason:row.lost_reason,recontactAt:row.recontact_at?new Date(row.recontact_at).getTime():null,client:{name:row.clients?.name||"Cliente",phone:row.clients?.phone||""},expiresAt:row.expires_at,cashDiscount:Number(row.cash_discount||0),depositPct:Number(row.deposit_pct||0),chosenOption:row.chosen_option_id,createdAt:row.created_at,acceptedAt:row.accepted_at,lastViewedAt:row.last_viewed_at,lastFollowUpAt:row.last_follow_up_at,proofSentAt:row.proof_sent_at,depositPaidAt:row.deposit_paid_at,depositStarted:row.deposit_started||0,followUps:row.follow_ups||0,options:(row.proposal_options||[]).sort((a,b)=>a.position-b.position).map(o=>({id:o.id,name:o.name,price:Number(o.price),discountType:o.discount_type,discountValue:Number(o.discount_value),description:o.description,hasInstallments:o.has_installments,installments:o.installments,hasWarranty:o.has_warranty,warranty:o.warranty,features:o.features,terms:o.terms,recommended:o.recommended}))};},
   async hydrate(){
     if(!this.on||!currentUser)return;
     const sb=await Auth.client(); await this.rpc("refresh_expired").catch(()=>{});
@@ -390,9 +389,11 @@ function publicProposalMarkup(p, mode="full"){
       <div class="public-includes">${includes}</div>
       ${payBlock(p)}
       <p style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
+      ${mode==="full"&&p.status!=="expired"?`<div class="pick-summary" id="pickSummary" hidden></div><div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
       <div class="public-actions">
         ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${multi?"Quiero esta opción":"Quiero esto"}</button>`:''}
         ${mode==="full"?`<a class="public-whatsapp" id="publicWhatsapp" href="#" target="_blank" rel="noopener">Hablar por WhatsApp</a>`:""}
+        ${mode==="full"&&p.status!=="expired"?`<button type="button" class="public-doubt" id="doubtBtn">🙋 Tengo una duda</button>`:""}
       </div>
       <div class="public-foot">${expiryLine(p)} · Propuesta digital CierraClick</div>
     </div>`;
@@ -471,6 +472,12 @@ async function openPublic(id,preview=false,quiet=false){
   attachPublicEvents(p);
 }
 function attachPublicEvents(p){
+  const upd=()=>{const o=chosenOf(p), sum=$("#pickSummary");
+    if(sum){sum.hidden=false;sum.innerHTML=`<b>${escapeHtml(o.name)}</b> · ${money(finalPrice(o))}${p.depositPct>0?` · Seña ${money(depositOf(p,o))}`:""}${o.hasInstallments&&o.installments>1?` · ${o.installments} cuotas`:""}`;}
+    $$("[data-doubt]").forEach(a=>{a.href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Soy ${p.client.name}. Tengo una duda sobre "${p.title}" (${o.name}, ${money(finalPrice(o))}): ${a.dataset.doubt}.`)}`;});};
+  upd(); if(p.options.length>1) markSelected(chosenOf(p).id);
+  $("#doubtBtn")?.addEventListener("click",()=>{const el=$("#doubtPanel"); el.hidden=!el.hidden; if(!el.hidden) el.scrollIntoView({block:"center",behavior:"smooth"});});
+  $$("[data-doubt]").forEach(a=>a.addEventListener("click",()=>{p.doubts=(p.doubts||0)+1;p.lastDoubt=a.dataset.doubt;state.activity.unshift({icon:"🙋",text:`${p.client.name} tiene una duda: ${a.dataset.doubt}.`,time:"Ahora"});saveState();}));
   $$("[data-select-option]",$("#publicContent")).forEach(btn=>{
     btn.addEventListener("click",()=>{
       const id=btn.dataset.selectOption;
@@ -478,7 +485,7 @@ function attachPublicEvents(p){
       p.lastEvent=`Cliente eligió ${p.options.find(x=>x.id===id)?.name||"una opción"}.`;
       state.activity.unshift({icon:"⭐",text:`${p.client.name} seleccionó una opción.`,time:"Ahora"});
       saveState(); if(Cloud.on) Cloud.rpc("track_proposal",{p_id:p.id,p_type:"select",p_option:id}).catch(()=>toast("No se pudo guardar la elección."));
-      markSelected(id);
+      markSelected(id); upd();
       const chosen=p.options.find(x=>x.id===id);
       $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Quiero avanzar con ${chosen.name} por ${money(finalPrice(chosen))}.`)}`;
       toast(`Elegiste ${chosen.name}.`);
@@ -546,10 +553,11 @@ function renderDashboard(){
   const pending=open.reduce((s,p)=>s+finalPrice(chosenOf(p)),0);
   $("#pendingBanner").innerHTML=open.length?`💰 <b>${money(pending)}</b> esperando respuesta en ${open.length} propuesta${open.length>1?"s":""}. Tocá <b>🔔 Seguimiento</b> para recuperarlas por WhatsApp.`:"";
   const paidBtn=p=>(p.status==="accepted"&&!p.depositPaidAt)?`<button class="text-btn" data-paid="${p.id}">✔ Seña recibida</button>`:"";
-  const followBtn=p=>(p.status==="sent"||p.status==="viewed")?`<button class="text-btn" data-follow="${p.id}">🔔 Seguimiento</button>`:"";
+  const followBtn=p=>p.status==="lost"?`<button class="text-btn" data-follow="${p.id}">💬 Retomar</button>`:(p.status==="accepted"&&!p.depositPaidAt&&p.depositPct>0)?`<button class="text-btn" data-follow="${p.id}">💸 Pedir seña</button>`:(p.status==="sent"||p.status==="viewed")?`<button class="text-btn" data-follow="${p.id}">${(p.followUps||0)>=3?"✉️ Cierre amable":"🔔 Seguimiento"}</button>`:"";
+  const lostBtn=p=>["sent","viewed","expired"].includes(p.status)?`<button class="text-btn" data-lost="${p.id}">✖ Perdida</button>`:"";
   const items=todayItems();
   $("#todayCount").textContent=items.length||"";
-  $("#todayList").innerHTML=items.map(({p,reason})=>`<div class="proposal-item"><div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${heat(p)} · ${reason}</span></div><div>${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:followBtn(p)+paidBtn(p)}<button class="text-btn" data-open="${p.id}">Abrir</button></div></div>`).join("")||'<p style="color:#64748b">🎉 Todo al día: no hay propuestas para seguir hoy.</p>';
+  $("#todayList").innerHTML=items.map(({p,reason})=>`<div class="proposal-item"><div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${heat(p)} · ${reason}</span></div><div>${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:followBtn(p)+paidBtn(p)+lostBtn(p)}<button class="text-btn" data-open="${p.id}">Abrir</button></div></div>`).join("")||'<p style="color:#64748b">🎉 Todo al día: no hay propuestas para seguir hoy.</p>';
   $("#hotList").innerHTML=proposals.slice(0,5).map(p=>`
     <div class="proposal-item">
       <div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${p.views||0} vistas</span></div>
@@ -562,11 +570,13 @@ function renderDashboard(){
     <td>${money(finalPrice(chosenOf(p)))}</td>
     <td><span class="badge ${p.status}">${statusLabel(p.status)}</span><br><small>${heat(p)}</small></td>
     <td>${p.views||0}</td><td>${relativeTime(p.createdAt)}</td>
-    <td class="actions">${followBtn(p)}${paidBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button></td></tr>`).join("");
+    <td class="actions">${followBtn(p)}${paidBtn(p)}${lostBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">🕓 Historial</button></td></tr>`).join("");
   $("#clientsGrid").innerHTML=(state.clients||[]).map(c=>`<div class="client"><h3>${escapeHtml(c.name)}</h3><p>${escapeHtml(c.phone)}</p><p>${c.proposals||0} propuesta(s)</p></div>`).join("");
   renderPerformance();
   $$("[data-open]").forEach(b=>b.addEventListener("click",()=>openPublic(b.dataset.open,true)));
   $$("[data-follow]").forEach(b=>b.addEventListener("click",()=>followUp(b.dataset.follow)));
+  $$("[data-lost]").forEach(b=>b.addEventListener("click",()=>openLost(b.dataset.lost)));
+  $$("[data-hist]").forEach(b=>b.addEventListener("click",()=>openHistory(b.dataset.hist)));
   $$("[data-paid]").forEach(b=>b.addEventListener("click",()=>markPaid(b.dataset.paid)));
   $$("[data-renew]").forEach(b=>b.addEventListener("click",()=>renewProposal(b.dataset.renew)));
   $$("[data-copylink]").forEach(b=>b.addEventListener("click",()=>{const p=state.proposals.find(x=>x.id===b.dataset.copylink);(navigator.clipboard?navigator.clipboard.writeText(shareLink(p)):Promise.reject()).then(()=>toast("Link copiado ✔"),()=>toast("No se pudo copiar."));}));
@@ -579,15 +589,18 @@ function todayItems(){
   const hTxt=h=>h<48?`${Math.floor(h)} h`:`${Math.floor(h/24)} días`;
   state.proposals.forEach(p=>{
     if(p.status==="accepted"&&p.proofSentAt&&!p.depositPaidAt){out.push({p,reason:"💸 Avisó que transfirió: verificá y confirmá la seña.",prio:0});return;}
-    if(p.status==="accepted"||p.status==="lost") return;
+    if(p.status==="accepted"&&!p.depositPaidAt&&p.depositPct>0){const ha=(now-new Date(p.acceptedAt||p.createdAt).getTime())/36e5;if(ha>=6)out.push({p,reason:`✅ Aceptó hace ${hTxt(ha)} y falta la seña.`,prio:1});return;}
+    if(p.status==="lost"){if(p.recontactAt&&p.recontactAt<=now)out.push({p,reason:`🔁 Hora de retomar (${p.lostReason||"perdida"}).`,prio:2});return;}
+    if(p.status==="accepted") return;
     const last=Math.max(new Date(p.lastViewedAt||p.createdAt).getTime(),p.lastFollowUpAt||0), h=(now-last)/36e5;
     let reason=null, prio=9;
     if(p.status==="expired"){reason="⛔ Venció: renovala y volvé a escribirle.";prio=1;}
     else if(daysLeft(p)<=2){reason=`⏳ ${expiryText(p)}.`;prio=2;}
+    else if(p.chosenOption&&h>=6){reason=`⭐ Eligió una opción y no aceptó (hace ${hTxt(h)}).`;prio=2;}
     else if(h>=24){reason=p.status==="viewed"?`👀 La vio y no respondió (hace ${hTxt(h)}).`:`📨 Sin abrir hace ${hTxt(h)}.`;prio=p.status==="viewed"?3:4;}
     if(reason) out.push({p,reason,prio});
   });
-  return out.sort((a,b)=>a.prio-b.prio||finalPrice(chosenOf(b.p))-finalPrice(chosenOf(a.p)));
+  return out.sort((a,b)=>a.prio-b.prio||finalPrice(chosenOf(b.p))*(leadScore(b.p)+10)-finalPrice(chosenOf(a.p))*(leadScore(a.p)+10));
 }
 async function renewProposal(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
@@ -626,22 +639,114 @@ function shareText(p){
   return `Hola ${first} 👋 Te armé tu propuesta de ${state.business.name}: ${multi?"elegí la opción que más te sirva":"revisá el detalle"}${p.depositPct>0?` y reservá con una seña del ${p.depositPct}%`:""}. ${when}. 👇\n${shareLink(p)}`;
 }
 // Seguimiento por WhatsApp con un toque (propuestas enviadas o vistas sin aceptar)
+function leadScore(p){
+  const t=p.lastViewedAt?new Date(p.lastViewedAt).getTime():0, h=(Date.now()-t)/36e5;
+  let sc=Math.min(p.views||0,5)*10;
+  if((p.views||0)>0&&h<24) sc+=20;
+  if(p.chosenOption) sc+=25;
+  sc+=Math.min(p.doubts||0,2)*5;
+  if(daysLeft(p)<=2) sc+=10;
+  sc-=Math.max(0,(p.followUps||0)-2)*10;
+  return Math.max(0,Math.min(100,sc));
+}
+function followMsg(p){
+  const first=p.client.name.split(" ")[0], link=shareLink(p), o=chosenOf(p), tot=money(finalPrice(o));
+  const dep=p.depositPct>0?money(depositOf(p,o)):tot, vig=fmtDate(p.expiresAt);
+  if(p.status==="lost") return `Hola ${first} 👋 Hace unos días hablamos de "${p.title}". ¿Retomamos? Si algo cambió, te lo ajusto.`;
+  if(p.status==="accepted") return `Hola ${first} 👋 ¡Gracias por aceptar! Para dejarte reservado queda la seña de ${dep}. Si ya la hiciste, mandame el comprobante y lo confirmo: ${link}`;
+  if(p.status==="expired") return `Hola ${first} 👋 Tu propuesta venció el ${vig}. Si querés, te la actualizo hoy y retomamos: ${link}`;
+  if((p.followUps||0)>=3) return `Hola ${first}, no quiero molestarte 🙂 Dejo la propuesta disponible hasta el ${vig} por si querés retomarla más adelante: ${link}`;
+  if(p.chosenOption) return `Hola ${first} 👋 Vi que elegiste ${o.name} (${tot}).${p.depositPct>0?` La seña es ${dep}.`:""} ¿Avanzamos y te lo dejo reservado? ${link}`;
+  if(daysLeft(p)<=2) return `Hola ${first} 👋 Aviso rápido: ${expiryText(p).toLowerCase()}. ¿Avanzamos para que no pierdas el precio? ${link}`;
+  if((p.views||0)>=3) return `Hola ${first} 👋 Vi que estuviste mirando la propuesta. ¿Querés que te ayude a elegir la opción que mejor te cierre? ${link}`;
+  if(p.status==="viewed") return `Hola ${first} 👋 Vi que ya revisaste la propuesta. ¿Te quedó alguna duda? Si querés avanzar, te reservo con la seña. Vigente hasta el ${vig}: ${link}`;
+  return `Hola ${first} 👋 ¿Pudiste ver la propuesta que te mandé? Vigente hasta el ${vig}: ${link}`;
+}
 async function followUp(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
-  const link=shareLink(p);
-  const first=p.client.name.split(" ")[0];
-  const msg=p.status==="viewed"
-    ?`Hola ${first} 👋 Vi que ya revisaste la propuesta. ¿Te quedó alguna duda? Si querés avanzar, te reservo con la seña. Vigente hasta el ${fmtDate(p.expiresAt)}: ${link}`
-    :`Hola ${first} 👋 ¿Pudiste ver la propuesta que te mandé? Vigente hasta el ${fmtDate(p.expiresAt)}: ${link}`;
-  if(Cloud.on){try{await Cloud.rpc("record_follow_up",{p_id:id});}catch(e){return toast(e.message||"No se pudo registrar el seguimiento.");}}
-  p.followUps=(p.followUps||0)+1; p.lastFollowUpAt=Date.now();
+  const msg=followMsg(p);
+  if(Cloud.on){try{await Cloud.rpc("record_follow_up",{p_id:id});}catch(e){if(p.status!=="accepted"&&p.status!=="lost")return toast(e.message||"No se pudo registrar el seguimiento.");}}
+  p.followUps=(p.followUps||0)+1; p.lastFollowUpAt=Date.now(); if(p.status==="lost") p.recontactAt=null;
   state.activity.unshift({icon:"🔔",text:`Seguimiento enviado a ${p.client.name}.`,time:"Ahora"});
   saveState(); renderDashboard();
   window.open(`https://wa.me/${normalizePhone(p.client.phone)}?text=${encodeURIComponent(msg)}`,"_blank","noopener");
 }
+/* Perdida con motivo y recontacto */
+const LOST_REASONS=["Precio","Eligió a otro","No responde","Postergó","Otro"];
+function openTool(html){$("#toolContent").innerHTML=html;openModal("toolModal");}
+function openLost(id){
+  const p=state.proposals.find(x=>x.id===id); if(!p) return;
+  openTool(`<h3>¿Qué pasó con ${escapeHtml(p.client.name)}?</h3><p class="tool-sub">Guardar el motivo te muestra qué mejorar.</p>
+  <div class="reason-grid">${LOST_REASONS.map((r,i)=>`<label class="reason"><input type="radio" name="lostReason" value="${r}" ${i===0?"checked":""}><span>${r}</span></label>`).join("")}</div>
+  <label class="tool-field">Recordame retomarla<select id="lostRecontact"><option value="0">No, cerrar</option><option value="7" selected>En 7 días</option><option value="15">En 15 días</option><option value="30">En 30 días</option></select></label>
+  <div class="tool-actions"><button class="btn btn-ghost" data-tool-close>Cancelar</button><button class="btn btn-primary" id="lostOk">Marcar perdida</button></div>`);
+  $("#lostOk").onclick=()=>confirmLost(id);
+}
+async function confirmLost(id){
+  const p=state.proposals.find(x=>x.id===id); if(!p) return;
+  const reason=$("input[name=lostReason]:checked").value, days=Number($("#lostRecontact").value);
+  if(Cloud.on){try{await Cloud.rpc("mark_lost",{p_id:id,p_reason:reason,p_recontact_days:days});}catch(e){try{await Cloud.rpc("mark_lost",{p_id:id});}catch(e2){return toast(e2.message||"No se pudo marcar como perdida.");}}}
+  p.status="lost"; p.lostReason=reason; p.recontactAt=days?Date.now()+days*864e5:null; p.lastEvent=`Perdida: ${reason}.`;
+  state.activity.unshift({icon:"📉",text:`${p.client.name}: perdida (${reason}).`,time:"Ahora"});
+  saveState(); closeModal("toolModal"); renderDashboard();
+  toast(days?`Te lo recuerdo en ${days} días.`:"Propuesta marcada como perdida.");
+}
+/* Historial de cada propuesta, armado con los datos que ya guarda */
+function openHistory(id){
+  const p=state.proposals.find(x=>x.id===id); if(!p) return;
+  const t=v=>v?new Date(v).getTime():0, lv=t(p.lastViewedAt)||t(p.createdAt), ev=[{t:t(p.createdAt),i:"📨",x:"Propuesta creada y enviada"}];
+  if(p.views) ev.push({t:lv,i:"👀",x:`Vista ${p.views} ${p.views>1?"veces":"vez"}`});
+  if(p.chosenOption) ev.push({t:lv+1,i:"⭐",x:`Eligió ${chosenOf(p).name}`});
+  if(p.doubts) ev.push({t:lv+2,i:"🙋",x:`Consultó una duda${p.lastDoubt?`: ${p.lastDoubt}`:""}`});
+  if(p.followUps) ev.push({t:p.lastFollowUpAt||0,i:"🔔",x:`${p.followUps} seguimiento${p.followUps>1?"s":""} enviado${p.followUps>1?"s":""}`});
+  if(p.acceptedAt) ev.push({t:t(p.acceptedAt),i:"✅",x:"Aceptó la propuesta"});
+  if(p.proofSentAt) ev.push({t:t(p.proofSentAt),i:"💸",x:"Avisó que transfirió"});
+  if(p.depositPaidAt) ev.push({t:t(p.depositPaidAt),i:"💰",x:"Seña cobrada"});
+  if(p.status==="lost") ev.push({t:Date.now(),i:"📉",x:`Perdida: ${p.lostReason||"sin motivo"}${p.recontactAt?` · retomar ${relativeTime(new Date(p.recontactAt).toISOString())}`:""}`});
+  ev.sort((a,b)=>a.t-b.t);
+  openTool(`<h3>Historial · ${escapeHtml(p.client.name)}</h3><p class="tool-sub">${escapeHtml(p.title)} · ${heat(p)}</p><ol class="timeline">${ev.map(e=>`<li><b>${e.i}</b><div>${escapeHtml(e.x)}${e.t>864e5?`<small>${relativeTime(new Date(e.t).toISOString())}</small>`:""}</div></li>`).join("")}</ol><div class="tool-actions"><button class="btn btn-ghost" data-tool-close>Cerrar</button></div>`);
+}
+/* Métricas de seguimiento dentro de Performance */
+function renderPerfExtras(){
+  const ps=state.proposals||[]; let box=$("#perfExtras");
+  if(!box){box=document.createElement("div");box.id="perfExtras";box.className="perf-extras";$("#panel-performance").appendChild(box);}
+  const by={}; ps.filter(p=>p.status==="lost").forEach(p=>{const r=p.lostReason||"Sin motivo";by[r]=(by[r]||0)+1;});
+  const lostN=Object.values(by).reduce((x,y)=>x+y,0);
+  const acc=ps.filter(p=>p.acceptedAt), hrs=acc.length?Math.round(acc.reduce((x,p)=>x+(new Date(p.acceptedAt)-new Date(p.createdAt)),0)/acc.length/36e5):null;
+  const win={}; acc.forEach(p=>{const n=chosenOf(p).name;win[n]=(win[n]||0)+1;}); const top=Object.entries(win).sort((x,y)=>y[1]-x[1])[0];
+  const risk=ps.filter(p=>["sent","viewed"].includes(p.status)&&daysLeft(p)<=2).reduce((x,p)=>x+finalPrice(chosenOf(p)),0);
+  const noDep=ps.filter(p=>p.status==="accepted"&&!p.depositPaidAt&&p.depositPct>0).reduce((x,p)=>x+depositOf(p,chosenOf(p)),0);
+  const doubts=ps.reduce((x,p)=>x+(p.doubts||0),0);
+  box.innerHTML=`<h3>Seguimiento y pérdidas</h3><div class="perf-grid">
+    <div class="perf-card"><span>Hasta aceptar</span><strong>${hrs===null?"—":hrs<48?hrs+" h":Math.round(hrs/24)+" días"}</strong><small>promedio</small></div>
+    <div class="perf-card"><span>Opción más aceptada</span><strong>${top?escapeHtml(top[0]):"—"}</strong><small>${top?top[1]+" aceptada"+(top[1]>1?"s":""):"sin datos"}</small></div>
+    <div class="perf-card"><span>En riesgo (vence ≤2 días)</span><strong>${money(risk)}</strong><small>sin respuesta</small></div>
+    <div class="perf-card"><span>Seña por cobrar</span><strong>${money(noDep)}</strong><small>aceptadas sin pago</small></div>
+    <div class="perf-card"><span>Dudas del cliente</span><strong>${doubts}</strong><small>consultas desde la propuesta</small></div></div>
+    <div class="loss-list"><b>Motivos de pérdida</b>${lostN?Object.entries(by).sort((x,y)=>y[1]-x[1]).map(([r,n])=>`<div class="loss-row"><span>${escapeHtml(r)}</span><i style="width:${Math.round(n/lostN*100)}%"></i><em>${n}</em></div>`).join(""):'<p style="color:#64748b;margin:6px 0 0">Todavía no marcaste propuestas como perdidas.</p>'}</div>`;
+}
+/* Avisos al vendedor: revisa novedades cada 45 s (modo Supabase) */
+let _unread=0; const BASE_TITLE=document.title;
+function startNewsPoll(){
+  window.addEventListener("focus",()=>{_unread=0;document.title=BASE_TITLE;});
+  if(!Cloud.on||PROPOSAL_MODE) return;
+  setInterval(async()=>{
+    if(document.hidden||!currentUser) return;
+    const before=new Map(state.proposals.map(p=>[p.id,{v:p.views||0,c:p.chosenOption,s:p.status}]));
+    try{await Cloud.hydrate();}catch(e){return;}
+    let msg=null;
+    state.proposals.forEach(p=>{const b=before.get(p.id); if(!b) return;
+      if(p.status==="accepted"&&b.s!=="accepted") msg=`✅ ${p.client.name} aceptó la propuesta`;
+      else if(p.chosenOption&&p.chosenOption!==b.c) msg=msg||`⭐ ${p.client.name} eligió una opción`;
+      else if((p.views||0)>b.v) msg=msg||`👀 ${p.client.name} abrió la propuesta`;});
+    if(msg){toast(msg);_unread++;document.title=`(${_unread}) ${BASE_TITLE}`;try{if(window.Notification&&Notification.permission==="granted")new Notification(msg);}catch(e){}}
+    renderDashboard();
+  },45000);
+}
 function statusLabel(s){return ({sent:"Enviada",viewed:"Vista",accepted:"Aceptada",lost:"Perdida",expired:"Vencida"}[s]||"Enviada")}
 
 function renderPerformance(){
+  renderPerfExtras();
   const p=state.proposals||[], n=p.length;
   const viewed=n?Math.round(p.filter(x=>(x.views||0)>0).length/n*100):0;
   const accepted= n?Math.round(p.filter(x=>x.status==="accepted").length/Math.max(1,p.filter(x=>(x.views||0)>0).length)*100):0;
@@ -750,6 +855,8 @@ function bind(){
   const proposalId=params.get("p");
   if(PROPOSAL_MODE){ openPublicLink(proposalId); }
   else nav("home");
+  document.addEventListener("click",e=>{if(e.target.closest("[data-tool-close]")||e.target.classList.contains("tool-backdrop")) closeModal("toolModal");});
+  startNewsPoll();
 
   if("serviceWorker" in navigator){
     window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}),{once:true});
