@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1220">
+  <script>try{if(/[?&]p=/.test(location.search))document.documentElement.classList.add("proposal-mode")}catch(e){}</script>
   <!--OG:start-->
     <title>CierraClick · Propuestas que se cierran por WhatsApp</title>
     <meta name="description" content="Armá una propuesta con opciones, descuentos y seña en minutos. Tu cliente la elige desde el celular y vos cerrás más ventas.">
@@ -33,6 +34,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 </head>
 <body>
+  <div class="proposal-loader" id="proposalLoader" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span>Cargando tu propuesta…</span></div>
   <header class="topbar">
     <a class="brand" href="#inicio" data-nav="home" aria-label="CierraClick">
       <span class="brand-mark">CC</span>
