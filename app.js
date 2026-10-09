@@ -438,8 +438,18 @@ async function createProposal(e){
 
 function normalizePhone(phone){ return String(phone||"").replace(/\D/g,""); }
 
-async function openPublic(id,preview=false){
-  if(Cloud.on&&!preview){try{const remote=await Cloud.publicProposal(id);if(!remote)return toast("No se encontró la propuesta.");const p={...remote,createdAt:remote.createdAt||new Date().toISOString()};state.business={...state.business,...remote.business};state.proposals=[p,...state.proposals.filter(x=>x.id!==id)];await Cloud.rpc("track_proposal",{p_id:id,p_type:"view"});return openPublic(id,true);}catch(e){return toast(e.message||"No se pudo abrir la propuesta.");}}
+const PROPOSAL_MODE=document.documentElement.classList.contains("proposal-mode");
+function showProposalMissing(){
+  $("#publicContent").innerHTML=`<div class="public-card"><div class="public-greeting">Esta propuesta no está disponible</div><p style="color:#64748b">El link puede estar incompleto o la propuesta fue eliminada. Pedile a quien te la envió que te mande el link de nuevo.</p></div>`;
+  openModal("publicModal");
+}
+async function openPublicLink(id){
+  try{ if(id&&(Cloud.on||state.proposals.some(p=>p.id===id))) await openPublic(id); }catch(e){}
+  if(!$("#publicModal").classList.contains("open")) showProposalMissing();
+  document.documentElement.classList.add("proposal-ready");
+}
+async function openPublic(id,preview=false,quiet=false){
+  if(Cloud.on&&!preview){try{const remote=await Cloud.publicProposal(id);if(!remote)return toast("No se encontró la propuesta.");const p={...remote,createdAt:remote.createdAt||new Date().toISOString()};state.business={...state.business,...remote.business};state.proposals=[p,...state.proposals.filter(x=>x.id!==id)];await Cloud.rpc("track_proposal",{p_id:id,p_type:"view"});return openPublic(id,true,true);}catch(e){return toast(e.message||"No se pudo abrir la propuesta.");}}
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
   currentProposalId=id;
   if(!preview){
@@ -448,8 +458,9 @@ async function openPublic(id,preview=false){
   p.lastEvent="Cliente abrió la propuesta.";
   state.activity.unshift({icon:"👀",text:`${p.client.name} abrió una propuesta.`,time:"Ahora"});
   saveState();
-  } else toast("Vista previa: no cuenta como visita.");
+  } else if(!quiet) toast("Vista previa: no cuenta como visita.");
   $("#publicContent").innerHTML=publicProposalMarkup(p,"full");
+  if(PROPOSAL_MODE) document.title=`${p.title} · ${state.business.name||"CierraClick"}`;
   const sel=chosenOf(p);
   $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Quiero consultar la propuesta de ${p.client.name} por ${money(finalPrice(sel))}.`)}`;
   markSelected(sel.id);
@@ -605,7 +616,7 @@ function printReceipt(id){
   w.document.close();
 }
 // ===== Compartir: link y mensaje persuasivo (la vista previa la arma functions/index.js) =====
-function shareLink(p){return `${location.origin}${location.pathname}?p=${encodeURIComponent(p.id)}`;}
+function shareLink(p){return `${location.origin}${location.pathname.replace(/index\.html$/,"")}?p=${encodeURIComponent(p.id)}`;}
 function shareText(p){
   const first=p.client.name.split(" ")[0], d=daysLeft(p), multi=p.options.length>1;
   const when=d<=0?"Vence hoy":d===1?"Vence mañana":`Vigente hasta el ${fmtDate(p.expiresAt)}`;
@@ -714,7 +725,7 @@ function bind(){
     renderOptionEditors(); renderBuilderPreview();
   });
   $$('input[name="kind"]').forEach(r=>r.addEventListener("change",()=>setKind(r.value)));
-  $$("[data-close]").forEach(el=>el.addEventListener("click",()=>closeModal({builder:"builderModal",auth:"authModal"}[el.dataset.close]||"publicModal")));
+  $$("[data-close]").forEach(el=>el.addEventListener("click",()=>PROPOSAL_MODE&&el.dataset.close==="public"?0:closeModal({builder:"builderModal",auth:"authModal"}[el.dataset.close]||"publicModal")));
   $$(".side-link").forEach(el=>el.addEventListener("click",()=>showPanel(el.dataset.panel)));
   $$(".text-btn[data-panel]").forEach(el=>el.addEventListener("click",()=>showPanel(el.dataset.panel)));
 
@@ -734,15 +745,8 @@ function bind(){
   // Performance-first: avoid intercepting the public URL until DOM is ready.
   const params=new URLSearchParams(location.search);
   const proposalId=params.get("p");
-  if(proposalId && Cloud.on){
-    nav("home"); openPublic(proposalId);
-  } else if(proposalId && state.proposals.some(p=>p.id===proposalId)){
-    // Public proposal mode: keep the shell minimal and focus immediately on the proposal.
-    nav("home");
-    openPublic(proposalId);
-  } else {
-    nav("home");
-  }
+  if(PROPOSAL_MODE){ openPublicLink(proposalId); }
+  else nav("home");
 
   if("serviceWorker" in navigator){
     window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}),{once:true});
