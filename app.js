@@ -511,7 +511,12 @@ function renderAcceptedState(p){
   $("#depositDemo")?.addEventListener("click",()=>{p.depositStarted=(p.depositStarted||0)+1;saveState();if(Cloud.on)Cloud.rpc("track_proposal",{p_id:p.id,p_type:"deposit_click"}).catch(()=>{});toast("Demo: configurá un link de pago en Ajustes.");});
 }
 
+function renderGreeting(){
+  const n=String((currentUser&&state.business.name)||"").trim(), el=$("#greeting");
+  if(el) el.textContent=n&&n!=="CierraClick Demo"?`Hola, ${n} 👋`:"Hola 👋";
+}
 function renderDashboard(){
+  renderGreeting();
   if(syncExpired(state.proposals)) saveState();
   const proposals=state.proposals||[];
   const views=proposals.reduce((s,p)=>s+(p.views||0),0);
