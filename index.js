@@ -16,7 +16,8 @@ export async function onRequestGet({ request, env }) {
       try {
         const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/get_share_meta`, {
           method: "POST",
-          headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${env.SUPABASE_ANON_KEY}`, "content-type": "application/json" },
+          // Las claves nuevas "sb_publishable_..." no son JWT: con ellas solo va el header apikey.
+          headers: { apikey: env.SUPABASE_ANON_KEY, ...(env.SUPABASE_ANON_KEY.startsWith("sb_") ? {} : { authorization: `Bearer ${env.SUPABASE_ANON_KEY}` }), "content-type": "application/json" },
           body: JSON.stringify({ p_id: id })
         });
         if (r.ok) data = await r.json();
