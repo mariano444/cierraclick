@@ -27,7 +27,9 @@ export function copyFor(m) {
 
   const multi = Number(m.options_count) > 1, off = Number(m.max_off) || 0, left = Number(m.days_left);
   const bits = [];
-  if (multi) bits.push(`Desde ${money(m.min_final)}`);
+  const names = Array.isArray(m.option_names) ? m.option_names.filter(Boolean).slice(0, 3) : [];
+  if (multi && names.length) bits.push(`${Number(m.options_count)} opciones: ${names.join(", ")}`);
+  if (multi) bits.push(`desde ${money(m.min_final)}`);
   else if (Number(m.feat_price) > Number(m.feat_final)) bits.push(`${money(m.feat_final)} (antes ${money(m.feat_price)})`);
   else bits.push(money(m.feat_final));
   if (off > 0) bits.push(multi ? `hasta ${off}% OFF` : `${off}% OFF`);
