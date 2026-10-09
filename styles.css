@@ -224,3 +224,17 @@ th{text-transform:uppercase;font-size:11px;letter-spacing:.06em}tbody tr:hover{b
   .icon-btn{width:44px;height:44px}.public-card{padding:20px}.tr-row span{width:64px}
 }
 @media (prefers-reduced-motion:reduce){.modal.open .modal-dialog{animation:none}.feature-card:hover,.price-card:hover,.choice:hover{transform:none}}
+
+/* Link público de propuesta (?p=ID): solo se ve la propuesta, sin landing, sin barra, sin botón de cierre */
+.proposal-loader{display:none}
+html.proposal-mode body{background:#f1f5f9}
+html.proposal-mode .topbar,html.proposal-mode .footer,html.proposal-mode .view,html.proposal-mode #authModal,html.proposal-mode #builderModal{display:none!important}
+html.proposal-mode .proposal-loader{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;gap:12px;background:#f1f5f9;color:#475569;font-weight:600}
+html.proposal-mode.proposal-ready .proposal-loader{display:none}
+.spinner{width:22px;height:22px;border-radius:50%;border:3px solid #cbd5e1;border-top-color:#16a34a;animation:ccspin .8s linear infinite}
+@keyframes ccspin{to{transform:rotate(360deg)}}
+html.proposal-mode .modal-backdrop{background:#f1f5f9;backdrop-filter:none}
+html.proposal-mode #publicModal .close-floating{display:none!important}
+html.proposal-mode #publicModal .modal-dialog{animation:none;margin:3vh auto;box-shadow:0 10px 40px rgba(15,23,42,.08)}
+@media (max-width:640px){html.proposal-mode #publicModal .modal-dialog{margin:0;box-shadow:none}}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2s}}
