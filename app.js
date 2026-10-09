@@ -356,21 +356,23 @@ function collectBuilderData(){
 function optionMarkup(p,o,mode){
   const multi=p.options.length>1, rec=o.recommended&&multi, d=discountAmount(o), fin=finalPrice(o);
   const badge=o.discountType==="percent"?`-${Math.round(Number(o.discountValue)||0)}%`:`Ahorrás ${money(d)}`;
+  const inst=o.hasInstallments&&o.installments>1?`<p class="meta-row"><b>${o.installments} cuotas</b> de ${money(fin/o.installments)}</p>`:"";
+  const dep=p.depositPct>0?`<p class="meta-row">🔒 Seña para reservar: <b>${money(depositOf(p,o))}</b> (${p.depositPct}%)</p>`:"";
+  const meta=(inst+String(cashLine(p,o)||"")+dep).trim();
+  const feats=(o.features||"").trim()?`<ul class="feat">${o.features.split("\n").map(x=>x.trim()).filter(Boolean).map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul>`:"";
   return `
     <article class="choice ${rec?"recommended":""}" data-choice="${escapeHtml(o.id)}">
-      ${rec?'<span class="tag">RECOMENDADA ⭐</span>':''}
-      <h4>${escapeHtml(o.name)}</h4>
-      ${d>0?`<div class="price-old">${money(o.price)}</div>`:""}
-      <div class="price">${money(fin)}</div>
-      ${cashLine(p,o)}
-      ${p.depositPct>0?`<p class="cash">🔒 Seña para reservar: <b>${money(depositOf(p,o))}</b> (${p.depositPct}%)</p>`:""}
-      ${d>0?`<span class="disc">${badge}</span>`:""}
-      ${o.hasInstallments&&o.installments>1?`<p>${o.installments} cuotas de ${money(fin/o.installments)}</p>`:""}
+      <header class="choice-head"><h4>${escapeHtml(o.name)}</h4>${rec?'<span class="tag">⭐ Recomendada</span>':""}</header>
+      <div class="choice-price">
+        ${d>0?`<div class="price-row"><span class="price-old">${money(o.price)}</span><span class="disc">${badge}</span></div>`:""}
+        <div class="price">${money(fin)}</div>
+      </div>
+      ${meta?`<div class="choice-meta">${meta}</div>`:""}
       ${o.description?`<p>${escapeHtml(o.description)}</p>`:""}
-      ${o.hasWarranty&&o.warranty?`<p>Garantía: ${escapeHtml(o.warranty)}</p>`:""}
-      ${(o.features||"").trim()?`<ul class="feat">${o.features.split("\n").map(x=>x.trim()).filter(Boolean).map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul>`:""}
+      ${o.hasWarranty&&o.warranty?`<p>🛡️ Garantía: ${escapeHtml(o.warranty)}</p>`:""}
+      ${feats}
       ${(o.terms||"").trim()?`<details class="terms"><summary>Términos y condiciones</summary><p>${escapeHtml(o.terms)}</p></details>`:""}
-      ${mode==="full"&&multi&&p.status!=="expired"?`<button class="select" data-select-option="${escapeHtml(o.id)}">Elegir ${escapeHtml(o.name)}</button>`:""}
+      ${mode==="full"&&multi&&p.status!=="expired"?`<button class="select" data-select-option="${escapeHtml(o.id)}" aria-label="Elegir ${escapeHtml(o.name)}">Elegir esta opción</button>`:""}
     </article>`;
 }
 
@@ -382,6 +384,7 @@ function publicProposalMarkup(p, mode="full"){
       <div class="public-brand"><span class="avatar">${escapeHtml((state.business.name||"?").trim().charAt(0).toUpperCase())}</span>${escapeHtml(state.business.name).toUpperCase()}</div>
       <div class="public-greeting">Hola ${escapeHtml(p.client.name)} 👋</div>
       <div class="public-title">${escapeHtml(p.title)}</div>
+      ${mode==="full"?`<span class="valid">${expiryLine(p)}</span>`:""}
       ${mode==="full"&&p.status!=="expired"?`<div class="steps"><span><b>1</b> ${multi?"Elegí tu opción":"Revisá la propuesta"}</span><span><b>2</b> Aceptá</span><span><b>3</b> Reservá${p.depositPct>0?" con seña":""}</span></div>`:""}
       <div class="choice-grid n${p.options.length}">${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
       <div class="public-includes">${includes}</div>
