@@ -459,3 +459,18 @@ html.proposal-mode .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 .steps span{flex-direction:row;gap:6px;padding:7px 6px;font-size:11.5px;text-align:left;justify-content:flex-start}
 .public-actions .public-seña{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-inline:10px}
 .public-actions .public-whatsapp,.public-actions .public-doubt{font-size:13px;white-space:nowrap}
+
+/* ===== v16: landing sin lenguaje técnico, calculadora, "necesito tiempo" ===== */
+.roi-card{max-width:860px;margin:0 auto;padding:clamp(20px,4vw,40px);border:1px solid var(--line);border-radius:var(--r-lg);background:#fff;box-shadow:var(--sh-2)}
+.roi-card h2{margin:6px 0 20px}
+.roi-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px}
+.roi-fields label{display:grid;gap:6px;font-size:13px;font-weight:700;color:var(--ink-2)}
+.roi-fields input{min-height:48px;padding:0 12px;border:1.5px solid #cbd5e1;border-radius:12px;font-size:16px;font-weight:700}
+.roi-fields input:focus{border-color:var(--accent-2)}
+.roi-out{margin:18px 0 6px;padding:16px 18px;border-radius:14px;background:var(--accent-wash);border:1px solid #bbf7d0;color:#14532d;font-size:1.02rem;line-height:1.55}
+.roi-note{color:var(--muted)}
+.roi-link{color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.later-box{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:16px;padding:14px;border:1px dashed var(--line);border-radius:14px;background:var(--soft)}
+.later-box span{flex:1 1 100%;font-size:13px;font-weight:700;color:var(--ink-2)}
+.later-box button{flex:1 1 150px;min-height:44px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-weight:700;font-size:14px;color:var(--ink);cursor:pointer}
+.later-box button:active{transform:scale(.98)}
