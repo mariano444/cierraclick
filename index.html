@@ -128,15 +128,30 @@
       <section class="section section-dark">
         <div class="container split">
           <div>
-            <span class="eyebrow eyebrow-light">PERFORMANCE CIERRACLICK</span>
-            <h2>Rápido, liviano y listo para crecer.</h2>
-            <p>Este MVP evita frameworks pesados: HTML, CSS y JavaScript nativo, carga diferida del script y persistencia local. La arquitectura queda preparada para conectar Supabase y Mercado Pago.</p>
+            <span class="eyebrow eyebrow-light">CÓMO TE AYUDA</span>
+            <h2>Más respuestas, más cierres y seguimiento sin adivinar.</h2>
+            <p>Tu cliente recibe un link que se abre en cualquier celular. Vos ves cuándo lo abrió, qué opción miró más tiempo y a quién escribirle primero hoy.</p>
           </div>
           <div class="performance-list">
-            <div><span>⚡</span><strong>JS nativo</strong><small>Sin dependencia de frontend</small></div>
-            <div><span>📱</span><strong>Mobile-first</strong><small>Diseñado para el flujo WhatsApp → propuesta</small></div>
-            <div><span>💾</span><strong>Datos locales</strong><small>Demo funcional sin backend</small></div>
-            <div><span>🔗</span><strong>Integrable</strong><small>Supabase + Mercado Pago + analytics</small></div>
+            <div><span>📱</span><strong>Se abre en el celular</strong><small>Sin descargar nada ni pedir PDF</small></div>
+            <div><span>👀</span><strong>Sabés qué miró</strong><small>Tiempo, opciones y botones que tocó</small></div>
+            <div><span>🔔</span><strong>Seguimiento listo</strong><small>Mensaje de WhatsApp según cada situación</small></div>
+            <div><span>💸</span><strong>Seña a un toque</strong><small>El cliente acepta y ve cómo reservar</small></div>
+          </div>
+        </div>
+      </section>
+      <section class="section" id="roi">
+        <div class="container">
+          <div class="roi-card">
+            <span class="eyebrow">HACÉ LA CUENTA</span>
+            <h2>¿Cuánto vale cerrar una venta más por mes?</h2>
+            <div class="roi-fields">
+              <label>Ticket promedio ($)<input id="roiTicket" type="number" inputmode="numeric" min="0" value="500000"></label>
+              <label>Presupuestos por mes<input id="roiCount" type="number" inputmode="numeric" min="0" value="20"></label>
+              <label>Hoy cerrás (%)<input id="roiRate" type="number" inputmode="numeric" min="0" max="100" value="20"></label>
+            </div>
+            <p class="roi-out" id="roiOut" aria-live="polite"></p>
+            <small class="roi-note">Es un ejemplo para que hagas tus propias cuentas, no una promesa de resultados.</small>
           </div>
         </div>
       </section>
@@ -260,7 +275,7 @@
         <div class="section-head center">
           <span class="eyebrow">PRECIOS</span>
           <h2>Empezá simple. Cobrá rápido.</h2>
-          <p>Los valores del brief se presentan como referencia del MVP y pueden modificarse desde el código.</p>
+          <p>Probá la demo sin cargo. Antes de elegir un plan, <a href="#roi" class="roi-link">hacé la cuenta con tu propio ticket</a>.</p>
         </div>
         <div class="pricing-grid">
           <article class="price-card"><span>INICIAL</span><h3>$19.900</h3><small>/ mes</small><p>Para vendedores independientes.</p><button class="btn btn-secondary btn-block" data-nav="dashboard">Probar demo</button></article>
