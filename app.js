@@ -165,10 +165,10 @@ const Cloud={
     const [biz,props,catalog,events]=await Promise.all([sb.from("businesses").select("*").eq("owner_id",currentUser.id).single(),sb.from("proposals").select("*,clients(name,phone),proposal_options!proposal_options_proposal_id_fkey(*)").order("created_at",{ascending:false}),sb.from("catalog_items").select("*").order("updated_at",{ascending:false}),sb.from("proposal_events").select("type,message,created_at").order("created_at",{ascending:false}).limit(12)]);
     if(biz.error||props.error||catalog.error||events.error)throw biz.error||props.error||catalog.error||events.error;
     const b=biz.data;
-    state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
+    state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,depositPolicy:b.deposit_policy,faq:b.faq,alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
     state.clients=Object.values(state.proposals.reduce((a,p)=>{const k=p.client.phone||p.client.name;a[k]||(a[k]={...p.client,proposals:0});a[k].proposals++;return a;},{}));fillSettings();renderDashboard();
   },
-  async publicProposal(id){return await this.rpc("get_public_proposal",{p_id:id});}
+  async publicProposal(id){const r=await this.rpc("get_public_proposal",{p_id:id}); if(r){try{const x=await this.rpc("get_public_extras",{p_id:id}); if(x) r.business={...(r.business||{}),...x};}catch(e){}} return r;}
 };
 function applyUser(u){
   currentUser=u; STORAGE_KEY=`cierraclick_u_${u.id}`; state=loadState();
@@ -187,7 +187,7 @@ function setAuthTab(t){
 }
 function fillSettings(){
   const f=$("#settingsForm"), b=state.business;
-  Object.entries({businessName:b.name,whatsapp:b.whatsapp,paymentLink:b.paymentLink,brandColor:b.brandColor,holder:b.holder,bank:b.bank,cbu:b.cbu,alias:b.alias,cuit:b.cuit,transferNote:b.transferNote})
+  Object.entries({businessName:b.name,whatsapp:b.whatsapp,paymentLink:b.paymentLink,brandColor:b.brandColor,holder:b.holder,bank:b.bank,cbu:b.cbu,alias:b.alias,cuit:b.cuit,transferNote:b.transferNote,depositPolicy:b.depositPolicy,faq:b.faq})
     .forEach(([k,v])=>{if(f.elements[k]) f.elements[k].value=v??"";});
 }
 async function markPaid(id){
@@ -376,6 +376,17 @@ function optionMarkup(p,o,mode){
     </article>`;
 }
 
+function faqItems(b){
+  return String(b.faq||"").split("\n").map(l=>l.split("|")).filter(a=>a.length>=2&&a[0].trim()&&a.slice(1).join("|").trim()).map(a=>({q:a[0].trim(),a:a.slice(1).join("|").trim()})).slice(0,8);
+}
+function assuranceMarkup(p){
+  const b=state.business, items=faqItems(b), pol=(b.depositPolicy||"").trim(), war=p.options.filter(o=>o.hasWarranty&&o.warranty);
+  if(!items.length&&!pol&&!war.length) return "";
+  return `<section class="assure" data-sec="garantias"><h4>Antes de decidir</h4>
+    ${pol?`<div class="assure-item"><b>🔒 Sobre la seña</b><p>${escapeHtml(pol)}</p></div>`:""}
+    ${war.length?`<div class="assure-item"><b>🛡️ Garantía</b><p>${war.map(o=>`${escapeHtml(o.name)}: ${escapeHtml(o.warranty)}`).join(" · ")}</p></div>`:""}
+    ${items.map(x=>`<details class="faq-item"><summary>${escapeHtml(x.q)}</summary><p>${escapeHtml(x.a)}</p></details>`).join("")}</section>`;
+}
 function publicProposalMarkup(p, mode="full"){
   const multi=p.options.length>1;
   const includes=(p.includes||[]).map(x=>`<div class="include">✓ ${escapeHtml(x)}</div>`).join("");
@@ -390,7 +401,7 @@ function publicProposalMarkup(p, mode="full"){
       <div class="public-includes" data-sec="incluye">${includes}</div>
       <div data-sec="pago">${payBlock(p)}</div>
       <p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
-      ${mode==="full"&&p.status!=="expired"?`<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div><div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
+      ${mode==="full"&&p.status!=="expired"?`${assuranceMarkup(p)}<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div><div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
       <div class="public-actions">
         ${mode==="full"&&p.status!=="expired"?`<div class="cta-note" id="ctaNote"></div>`:""}
         ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${multi?"Quiero esta opción":"Quiero esto"}</button>`:''}
@@ -718,6 +729,7 @@ function startTracker(p){
     else if(el.id==="publicWhatsapp") key="Toca WhatsApp";
     else if(el.id==="doubtBtn") key="Abre «Tengo una duda»";
     else if(el.dataset.doubt) key="Duda: "+el.dataset.doubt;
+    else if(el.tagName==="SUMMARY"&&el.closest(".faq-item")) key="Abre pregunta: "+el.textContent.trim().slice(0,40);
     else if(el.tagName==="SUMMARY"){const c=el.closest("[data-choice]");key="Abre términos"+(c?" de "+optName(c.dataset.choice):"");}
     else if(el.dataset.choice) key="Toca la opción "+optName(el.dataset.choice);
     else {const tx=(el.textContent||el.getAttribute("aria-label")||"").trim().replace(/\s+/g," ").slice(0,40); if(!tx) return; key="Toca: "+tx;}
@@ -767,6 +779,7 @@ function engInsights(p,S){
     if(p.chosenOption&&p.chosenOption!==top[0][0]) out.push(`🤔 Miró más ${nm(top[0][0])} pero eligió ${nm(p.chosenOption)}: puede estar comparando precios.`);}
   if((S.secs.pago||0)>=8000) out.push("💳 Leyó la forma de pago: ofrecele reservar con la seña.");
   if((S.secs.condiciones||0)>=8000||S.taps.some(t=>t.key.startsWith("Abre términos"))) out.push("📄 Revisó las condiciones: aclarale cualquier duda sobre eso.");
+  const qs=[...new Set(S.taps.filter(t=>t.key.startsWith("Abre pregunta")).map(t=>t.key.slice(16)))]; if(qs.length) out.push("❓ Abrió estas preguntas: "+qs.slice(0,3).join(" · ")+".");
   if(S.sessions>=2) out.push(`🔁 Volvió ${S.sessions} veces: lo está evaluando en serio.`);
   if(S.total&&S.total<15000&&S.scroll<50) out.push("⚠️ Se fue rápido y no llegó al final: quizás no vio las opciones.");
   if(S.scroll>=90&&S.total>=60000) out.push("✅ Leyó toda la propuesta con atención.");
@@ -774,7 +787,7 @@ function engInsights(p,S){
 }
 function engHtml(p,S){
   if(!S.total&&!S.taps.length&&!S.sessions) return '<p class="tool-sub">Todavía no hay datos de atención. Se registran cuando el cliente abre el link.</p>';
-  const SEC={incluye:"Qué incluye",pago:"Forma de pago",condiciones:"Condiciones"};
+  const SEC={incluye:"Qué incluye",pago:"Forma de pago",condiciones:"Condiciones",garantias:"Garantías y preguntas"};
   const bars=(obj,lab)=>{const e=Object.entries(obj).filter(x=>x[1]>=1000).sort((a,b)=>b[1]-a[1]); const mx=e[0]?e[0][1]:1;
     return e.map(([k,ms])=>`<div class="eng-row"><span>${escapeHtml(lab(k))}</span><i style="width:${Math.max(4,Math.round(ms/mx*100))}%"></i><em>${fmtDur(ms)}</em></div>`).join("")||'<p class="tool-sub">Sin datos suficientes.</p>';};
   const ins=engInsights(p,S);
@@ -979,8 +992,8 @@ function bind(){
     const g=k=>String(fd.get(k)||"").trim(), cbu=g("cbu").replace(/\s/g,""), alias=g("alias");
     if(cbu&&!/^\d{22}$/.test(cbu)) return toast("El CBU/CVU debe tener 22 números.");
     if(alias&&!/^[A-Za-z0-9.\-]{6,20}$/.test(alias)) return toast("El alias debe tener 6 a 20 letras, números, puntos o guiones.");
-    state.business={...state.business,name:g("businessName"),whatsapp:g("whatsapp"),paymentLink:g("paymentLink"),brandColor:g("brandColor"),holder:g("holder"),bank:g("bank"),cbu,alias,cuit:g("cuit"),transferNote:g("transferNote")};
-    if(Cloud.on){try{const sb=await Auth.client();const {error}=await sb.from("businesses").update({name:state.business.name,whatsapp:state.business.whatsapp,payment_link:state.business.paymentLink,brand_color:state.business.brandColor,holder:state.business.holder,bank:state.business.bank,cbu,alias,cuit:state.business.cuit,transfer_note:state.business.transferNote}).eq("owner_id",currentUser.id);if(error)throw error;}catch(ex){return toast(ex.message||"No se pudo guardar la configuración.");}}
+    state.business={...state.business,name:g("businessName"),whatsapp:g("whatsapp"),paymentLink:g("paymentLink"),brandColor:g("brandColor"),holder:g("holder"),bank:g("bank"),cbu,alias,cuit:g("cuit"),transferNote:g("transferNote"),depositPolicy:g("depositPolicy"),faq:g("faq")};
+    if(Cloud.on){try{const sb=await Auth.client();const {error}=await sb.from("businesses").update({name:state.business.name,whatsapp:state.business.whatsapp,payment_link:state.business.paymentLink,deposit_policy:state.business.depositPolicy||"",faq:state.business.faq||"",brand_color:state.business.brandColor,holder:state.business.holder,bank:state.business.bank,cbu,alias,cuit:state.business.cuit,transfer_note:state.business.transferNote}).eq("owner_id",currentUser.id);if(error)throw error;}catch(ex){return toast(ex.message||"No se pudo guardar la configuración.");}}
     saveState(); toast("Configuración guardada.");
   });
 
