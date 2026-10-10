@@ -247,6 +247,7 @@ function openModal(id){
   document.body.style.overflow="hidden";
 }
 function closeModal(id){
+  if(id==="publicModal"&&typeof stopTracker==="function") stopTracker();
   const modal=$("#"+id); modal.classList.remove("open"); modal.setAttribute("aria-hidden","true");
   document.body.style.overflow="";
 }
@@ -386,9 +387,9 @@ function publicProposalMarkup(p, mode="full"){
       ${mode==="full"?`<span class="valid">${expiryLine(p)}</span>`:""}
       ${mode==="full"&&p.status!=="expired"?`<div class="steps"><span><b>1</b> ${multi?"Elegí tu opción":"Revisá la propuesta"}</span><span><b>2</b> Aceptá</span><span><b>3</b> Reservá${p.depositPct>0?" con seña":""}</span></div>`:""}
       <div class="choice-grid n${p.options.length}">${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
-      <div class="public-includes">${includes}</div>
-      ${payBlock(p)}
-      <p style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
+      <div class="public-includes" data-sec="incluye">${includes}</div>
+      <div data-sec="pago">${payBlock(p)}</div>
+      <p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
       ${mode==="full"&&p.status!=="expired"?`<div class="pick-summary" id="pickSummary" hidden></div><div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
       <div class="public-actions">
         ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${multi?"Quiero esta opción":"Quiero esto"}</button>`:''}
@@ -470,6 +471,7 @@ async function openPublic(id,preview=false,quiet=false){
   markSelected(sel.id);
   openModal("publicModal");
   attachPublicEvents(p);
+  if(!preview||quiet) startTracker(p);
 }
 function attachPublicEvents(p){
   const upd=()=>{const o=chosenOf(p), sum=$("#pickSummary");
@@ -536,7 +538,9 @@ function renderGreeting(){
   const n=String((currentUser&&state.business.name)||"").trim(), el=$("#greeting");
   if(el) el.textContent=n&&n!=="CierraClick Demo"?`Hola, ${n} 👋`:"Hola 👋";
 }
+let _engBoot=false;
 function renderDashboard(){
+  if(Cloud.on&&currentUser&&!_engBoot){_engBoot=true;loadEngTotals();}
   renderGreeting();
   if(syncExpired(state.proposals)) saveState();
   const proposals=state.proposals||[];
@@ -568,9 +572,9 @@ function renderDashboard(){
   $("#proposalTable").innerHTML=proposals.map(p=>`
     <tr><td><strong>${escapeHtml(p.client.name)}</strong><br><small>${escapeHtml(p.title)}</small></td>
     <td>${money(finalPrice(chosenOf(p)))}</td>
-    <td><span class="badge ${p.status}">${statusLabel(p.status)}</span><br><small>${heat(p)}</small></td>
+    <td><span class="badge ${p.status}">${statusLabel(p.status)}</span><br><small>${heat(p)}${engBadge(p)}</small></td>
     <td>${p.views||0}</td><td>${relativeTime(p.createdAt)}</td>
-    <td class="actions">${followBtn(p)}${paidBtn(p)}${lostBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">🕓 Historial</button></td></tr>`).join("");
+    <td class="actions">${followBtn(p)}${paidBtn(p)}${lostBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">📊 Atención</button></td></tr>`).join("");
   $("#clientsGrid").innerHTML=(state.clients||[]).map(c=>`<div class="client"><h3>${escapeHtml(c.name)}</h3><p>${escapeHtml(c.phone)}</p><p>${c.proposals||0} propuesta(s)</p></div>`).join("");
   renderPerformance();
   $$("[data-open]").forEach(b=>b.addEventListener("click",()=>openPublic(b.dataset.open,true)));
@@ -645,6 +649,7 @@ function leadScore(p){
   if((p.views||0)>0&&h<24) sc+=20;
   if(p.chosenOption) sc+=25;
   sc+=Math.min(p.doubts||0,2)*5;
+  const E=engOf(p); if(E.total>=180000) sc+=15; else if(E.total>=60000) sc+=10; if(E.scroll>=80) sc+=5; if(E.terms) sc+=5;
   if(daysLeft(p)<=2) sc+=10;
   sc-=Math.max(0,(p.followUps||0)-2)*10;
   return Math.max(0,Math.min(100,sc));
@@ -670,6 +675,106 @@ async function followUp(id){
   state.activity.unshift({icon:"🔔",text:`Seguimiento enviado a ${p.client.name}.`,time:"Ahora"});
   saveState(); renderDashboard();
   window.open(`https://wa.me/${normalizePhone(p.client.phone)}?text=${encodeURIComponent(msg)}`,"_blank","noopener");
+}
+/* ===== Atención del cliente: tiempo, scroll, secciones y toques ===== */
+let _trk=null;
+const fmtDur=ms=>{const s=Math.round(ms/1000); if(s<60) return s+" s"; const m=Math.floor(s/60); return m<60?`${m} min ${s%60} s`:`${Math.floor(m/60)} h ${m%60} min`;};
+function startTracker(p){
+  stopTracker();
+  const T=_trk={p,sid:Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4),buf:[],ms:{},scroll:0,sent:0,act:Date.now(),vis:new Set(),off:[]};
+  const root=$("#publicContent"), w=innerWidth, optName=id=>(p.options.find(o=>o.id===id)||{}).name||"una opción";
+  T.buf.push({k:"open",key:`${w<640?"celular":w<1000?"tablet":"escritorio"} ${w}px`,ms:0});
+  const on=(t,ev,fn,o)=>{t.addEventListener(ev,fn,o);T.off.push(()=>t.removeEventListener(ev,fn,o));};
+  ["pointerdown","keydown","touchstart","wheel","mousemove"].forEach(ev=>on(window,ev,()=>{T.act=Date.now();},{passive:true}));
+  on(document,"scroll",e=>{T.act=Date.now();const t=e.target===document?document.scrollingElement:e.target;if(!t||!t.scrollHeight)return;
+    T.scroll=Math.max(T.scroll,Math.min(100,Math.round((t.scrollTop+t.clientHeight)/t.scrollHeight*100)));},true);
+  const sc=root.closest(".modal-dialog"); if(sc&&sc.scrollHeight) T.scroll=Math.min(100,Math.round(sc.clientHeight/sc.scrollHeight*100));
+  const keyOf=el=>el.dataset.choice?"o:"+el.dataset.choice:"s:"+el.dataset.sec;
+  if("IntersectionObserver" in window){
+    const io=new IntersectionObserver(es=>es.forEach(e=>{const k=keyOf(e.target); e.isIntersecting&&e.intersectionRatio>=.5?T.vis.add(k):T.vis.delete(k);}),{threshold:[0,.5,1]});
+    root.querySelectorAll("[data-choice],[data-sec]").forEach(el=>io.observe(el)); T.off.push(()=>io.disconnect());
+  }
+  on(root,"click",e=>{const el=e.target.closest("button,a,summary,[data-choice]"); if(!el) return; let key;
+    if(el.dataset.selectOption) key="Elige "+optName(el.dataset.selectOption);
+    else if(el.id==="acceptBtn") key="Acepta la propuesta";
+    else if(el.id==="publicWhatsapp") key="Toca WhatsApp";
+    else if(el.id==="doubtBtn") key="Abre «Tengo una duda»";
+    else if(el.dataset.doubt) key="Duda: "+el.dataset.doubt;
+    else if(el.tagName==="SUMMARY"){const c=el.closest("[data-choice]");key="Abre términos"+(c?" de "+optName(c.dataset.choice):"");}
+    else if(el.dataset.choice) key="Toca la opción "+optName(el.dataset.choice);
+    else {const tx=(el.textContent||el.getAttribute("aria-label")||"").trim().replace(/\s+/g," ").slice(0,40); if(!tx) return; key="Toca: "+tx;}
+    T.buf.push({k:"tap",key,ms:0,t:Date.now()});
+  },true);
+  const add=(k,ms)=>{T.ms[k]=(T.ms[k]||0)+ms;};
+  const tick=setInterval(()=>{ if(document.visibilityState==="visible"&&Date.now()-T.act<30000){add("total",1000);T.vis.forEach(k=>add(k,1000));} },1000);
+  const fl=setInterval(()=>flushTracker(),10000);
+  T.off.push(()=>{clearInterval(tick);clearInterval(fl);});
+  on(document,"visibilitychange",()=>{if(document.visibilityState==="hidden") flushTracker();});
+  on(window,"pagehide",()=>flushTracker());
+}
+function stopTracker(){ if(!_trk) return; flushTracker(); _trk.off.forEach(f=>f()); _trk=null; }
+function flushTracker(){
+  const T=_trk; if(!T) return;
+  const ev=T.buf.splice(0);
+  Object.entries(T.ms).forEach(([key,ms])=>{if(ms>0) ev.push({k:"time",key,ms});}); T.ms={};
+  if(T.scroll>T.sent){ev.push({k:"scroll",key:"max",ms:T.scroll});T.sent=T.scroll;}
+  if(!ev.length) return;
+  const now=Date.now(); ev.forEach(e=>{e.s=T.sid;e.t=e.t||now;});
+  const p=T.p;
+  if(Cloud.on){
+    const c=window.CC_CONFIG||{}, key=c.supabaseKey||"";
+    fetch(`${c.supabaseUrl}/rest/v1/rpc/track_engagement`,{method:"POST",keepalive:true,headers:{apikey:key,...(key.startsWith("sb_")?{}:{authorization:`Bearer ${key}`}),"content-type":"application/json"},
+      body:JSON.stringify({p_id:p.id,p_session:T.sid,p_events:ev.map(e=>({k:e.k,key:e.key,ms:e.ms}))})}).catch(()=>{});
+  } else { p.engEvents=(p.engEvents||[]).concat(ev).slice(-600); saveState(); }
+}
+function engSummary(ev){
+  const S={total:0,sessions:new Set(),scroll:0,opts:{},secs:{},taps:[],device:"",last:0};
+  (ev||[]).forEach(e=>{S.sessions.add(e.s); if(e.t>S.last) S.last=e.t;
+    if(e.k==="time"){ if(e.key==="total") S.total+=e.ms; else if(e.key.startsWith("o:")){const i=e.key.slice(2);S.opts[i]=(S.opts[i]||0)+e.ms;} else if(e.key.startsWith("s:")){const i=e.key.slice(2);S.secs[i]=(S.secs[i]||0)+e.ms;} }
+    else if(e.k==="scroll") S.scroll=Math.max(S.scroll,e.ms);
+    else if(e.k==="tap") S.taps.push(e);
+    else if(e.k==="open") S.device=e.key;});
+  S.sessions=S.sessions.size; return S;
+}
+function engOf(p){
+  if(p.engMs!=null) return {total:p.engMs,sessions:p.engSessions||0,scroll:p.engScroll||0,terms:false};
+  if(p.engEvents&&p.engEvents.length){const S=engSummary(p.engEvents);return {total:S.total,sessions:S.sessions,scroll:S.scroll,terms:S.taps.some(t=>t.key.startsWith("Abre términos"))};}
+  return {total:0,sessions:0,scroll:0,terms:false};
+}
+const engBadge=p=>{const E=engOf(p);return E.total>=1000?` · ⏱ ${fmtDur(E.total)}`:"";};
+function engInsights(p,S){
+  const out=[], nm=id=>(p.options.find(o=>o.id===id)||{}).name||"una opción";
+  const top=Object.entries(S.opts).sort((a,b)=>b[1]-a[1]);
+  if(top.length&&top[0][1]>=5000){out.push(`⏱ Pasó más tiempo en ${nm(top[0][0])} (${fmtDur(top[0][1])}).`);
+    if(p.chosenOption&&p.chosenOption!==top[0][0]) out.push(`🤔 Miró más ${nm(top[0][0])} pero eligió ${nm(p.chosenOption)}: puede estar comparando precios.`);}
+  if((S.secs.pago||0)>=8000) out.push("💳 Leyó la forma de pago: ofrecele reservar con la seña.");
+  if((S.secs.condiciones||0)>=8000||S.taps.some(t=>t.key.startsWith("Abre términos"))) out.push("📄 Revisó las condiciones: aclarale cualquier duda sobre eso.");
+  if(S.sessions>=2) out.push(`🔁 Volvió ${S.sessions} veces: lo está evaluando en serio.`);
+  if(S.total&&S.total<15000&&S.scroll<50) out.push("⚠️ Se fue rápido y no llegó al final: quizás no vio las opciones.");
+  if(S.scroll>=90&&S.total>=60000) out.push("✅ Leyó toda la propuesta con atención.");
+  return out;
+}
+function engHtml(p,S){
+  if(!S.total&&!S.taps.length&&!S.sessions) return '<p class="tool-sub">Todavía no hay datos de atención. Se registran cuando el cliente abre el link.</p>';
+  const SEC={incluye:"Qué incluye",pago:"Forma de pago",condiciones:"Condiciones"};
+  const bars=(obj,lab)=>{const e=Object.entries(obj).filter(x=>x[1]>=1000).sort((a,b)=>b[1]-a[1]); const mx=e[0]?e[0][1]:1;
+    return e.map(([k,ms])=>`<div class="eng-row"><span>${escapeHtml(lab(k))}</span><i style="width:${Math.max(4,Math.round(ms/mx*100))}%"></i><em>${fmtDur(ms)}</em></div>`).join("")||'<p class="tool-sub">Sin datos suficientes.</p>';};
+  const ins=engInsights(p,S);
+  return `<div class="eng-stats"><div><b>${fmtDur(S.total)}</b><span>tiempo activo</span></div><div><b>${S.sessions}</b><span>visita${S.sessions!==1?"s":""}</span></div><div><b>${S.scroll}%</b><span>llegó hasta</span></div><div><b>${escapeHtml(S.device||"—")}</b><span>dispositivo</span></div></div>
+  ${ins.length?`<ul class="eng-insights">${ins.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul>`:""}
+  <h4>Tiempo por opción</h4>${bars(S.opts,id=>(p.options.find(o=>o.id===id)||{}).name||"Opción")}
+  <h4>Tiempo por sección</h4>${bars(S.secs,k=>SEC[k]||k)}
+  <h4>Todo lo que tocó</h4>${S.taps.length?`<ol class="eng-taps">${S.taps.slice(-25).reverse().map(t=>`<li>${escapeHtml(t.key)}<small>${relativeTime(new Date(t.t).toISOString())}</small></li>`).join("")}</ol>`:'<p class="tool-sub">Todavía no tocó nada.</p>'}`;
+}
+async function fillEngagement(p){
+  let ev=p.engEvents||[];
+  if(Cloud.on&&currentUser){try{const sb=await Auth.client(); const {data}=await sb.from("proposal_engagement_events").select("session,kind,key,ms,created_at").eq("proposal_id",p.id).order("created_at").limit(1500);
+    ev=(data||[]).map(r=>({s:r.session,k:r.kind,key:r.key,ms:r.ms,t:new Date(r.created_at).getTime()}));}catch(e){}}
+  const box=$("#engBox"); if(box) box.innerHTML=engHtml(p,engSummary(ev));
+}
+async function loadEngTotals(){
+  if(!Cloud.on||!currentUser) return;
+  try{const sb=await Auth.client(); const {data}=await sb.rpc("engagement_totals"); (data||[]).forEach(r=>{const p=state.proposals.find(x=>x.id===r.proposal_id); if(p){p.engMs=Number(r.ms);p.engSessions=Number(r.sessions);p.engScroll=Number(r.max_scroll);}}); renderDashboard();}catch(e){}
 }
 /* Perdida con motivo y recontacto */
 const LOST_REASONS=["Precio","Eligió a otro","No responde","Postergó","Otro"];
@@ -704,7 +809,8 @@ function openHistory(id){
   if(p.depositPaidAt) ev.push({t:t(p.depositPaidAt),i:"💰",x:"Seña cobrada"});
   if(p.status==="lost") ev.push({t:Date.now(),i:"📉",x:`Perdida: ${p.lostReason||"sin motivo"}${p.recontactAt?` · retomar ${relativeTime(new Date(p.recontactAt).toISOString())}`:""}`});
   ev.sort((a,b)=>a.t-b.t);
-  openTool(`<h3>Historial · ${escapeHtml(p.client.name)}</h3><p class="tool-sub">${escapeHtml(p.title)} · ${heat(p)}</p><ol class="timeline">${ev.map(e=>`<li><b>${e.i}</b><div>${escapeHtml(e.x)}${e.t>864e5?`<small>${relativeTime(new Date(e.t).toISOString())}</small>`:""}</div></li>`).join("")}</ol><div class="tool-actions"><button class="btn btn-ghost" data-tool-close>Cerrar</button></div>`);
+  openTool(`<h3>Historial · ${escapeHtml(p.client.name)}</h3><p class="tool-sub">${escapeHtml(p.title)} · ${heat(p)}</p><ol class="timeline">${ev.map(e=>`<li><b>${e.i}</b><div>${escapeHtml(e.x)}${e.t>864e5?`<small>${relativeTime(new Date(e.t).toISOString())}</small>`:""}</div></li>`).join("")}</ol><h3 class="eng-title">Atención del cliente</h3><div id="engBox"><p class="tool-sub">Cargando análisis…</p></div><div class="tool-actions"><button class="btn btn-ghost" data-tool-close>Cerrar</button></div>`);
+  fillEngagement(p);
 }
 /* Métricas de seguimiento dentro de Performance */
 function renderPerfExtras(){
@@ -716,12 +822,14 @@ function renderPerfExtras(){
   const win={}; acc.forEach(p=>{const n=chosenOf(p).name;win[n]=(win[n]||0)+1;}); const top=Object.entries(win).sort((x,y)=>y[1]-x[1])[0];
   const risk=ps.filter(p=>["sent","viewed"].includes(p.status)&&daysLeft(p)<=2).reduce((x,p)=>x+finalPrice(chosenOf(p)),0);
   const noDep=ps.filter(p=>p.status==="accepted"&&!p.depositPaidAt&&p.depositPct>0).reduce((x,p)=>x+depositOf(p,chosenOf(p)),0);
+  const att=ps.map(p=>engOf(p).total).filter(x=>x>0), avgAtt=att.length?att.reduce((x,y)=>x+y,0)/att.length:0;
   const doubts=ps.reduce((x,p)=>x+(p.doubts||0),0);
   box.innerHTML=`<h3>Seguimiento y pérdidas</h3><div class="perf-grid">
     <div class="perf-card"><span>Hasta aceptar</span><strong>${hrs===null?"—":hrs<48?hrs+" h":Math.round(hrs/24)+" días"}</strong><small>promedio</small></div>
     <div class="perf-card"><span>Opción más aceptada</span><strong>${top?escapeHtml(top[0]):"—"}</strong><small>${top?top[1]+" aceptada"+(top[1]>1?"s":""):"sin datos"}</small></div>
     <div class="perf-card"><span>En riesgo (vence ≤2 días)</span><strong>${money(risk)}</strong><small>sin respuesta</small></div>
     <div class="perf-card"><span>Seña por cobrar</span><strong>${money(noDep)}</strong><small>aceptadas sin pago</small></div>
+    <div class="perf-card"><span>Atención promedio</span><strong>${avgAtt?fmtDur(avgAtt):"—"}</strong><small>por propuesta vista</small></div>
     <div class="perf-card"><span>Dudas del cliente</span><strong>${doubts}</strong><small>consultas desde la propuesta</small></div></div>
     <div class="loss-list"><b>Motivos de pérdida</b>${lostN?Object.entries(by).sort((x,y)=>y[1]-x[1]).map(([r,n])=>`<div class="loss-row"><span>${escapeHtml(r)}</span><i style="width:${Math.round(n/lostN*100)}%"></i><em>${n}</em></div>`).join(""):'<p style="color:#64748b;margin:6px 0 0">Todavía no marcaste propuestas como perdidas.</p>'}</div>`;
 }
@@ -740,7 +848,7 @@ function startNewsPoll(){
       else if(p.chosenOption&&p.chosenOption!==b.c) msg=msg||`⭐ ${p.client.name} eligió una opción`;
       else if((p.views||0)>b.v) msg=msg||`👀 ${p.client.name} abrió la propuesta`;});
     if(msg){toast(msg);_unread++;document.title=`(${_unread}) ${BASE_TITLE}`;try{if(window.Notification&&Notification.permission==="granted")new Notification(msg);}catch(e){}}
-    renderDashboard();
+    loadEngTotals(); renderDashboard();
   },45000);
 }
 function statusLabel(s){return ({sent:"Enviada",viewed:"Vista",accepted:"Aceptada",lost:"Perdida",expired:"Vencida"}[s]||"Enviada")}
