@@ -470,6 +470,7 @@ async function openPublic(id,preview=false,quiet=false){
   $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Quiero consultar la propuesta de ${p.client.name} por ${money(finalPrice(sel))}.`)}`;
   markSelected(sel.id);
   openModal("publicModal");
+  if(p.status==="accepted"){ renderAcceptedState(p); if(!preview||quiet) startTracker(p); return; }
   attachPublicEvents(p);
   if(!preview||quiet) startTracker(p);
 }
@@ -511,13 +512,14 @@ function renderAcceptedState(p){
       <div class="public-brand"><span class="avatar">${escapeHtml((state.business.name||"?").trim().charAt(0).toUpperCase())}</span>${escapeHtml(state.business.name).toUpperCase()}</div>
       <div class="public-greeting">¡Excelente, ${escapeHtml(p.client.name)}! ✅</div>
       <p style="color:#64748b">Tu elección quedó registrada: <strong>${escapeHtml(option.name)}</strong> · ${money(finalPrice(option))}</p>
+      ${p.depositPaidAt?`<div class="pick-summary">💰 <b>Seña recibida.</b> ¡Tu reserva está confirmada!</div>`:p.proofSentAt?`<div class="pick-summary">💸 Avisaste que transferiste. ${escapeHtml(b.name)} lo está verificando.</div>`:""}
       <div class="card" style="margin-top:16px;background:#f8fafc">
         <strong>Para reservar la operación</strong>
         <p style="color:#64748b;margin-bottom:0">${p.depositPct>0?`Seña a pagar: <b>${money(depositOf(p,option))}</b> (${p.depositPct}%) · Saldo: ${money(finalPrice(option)-depositOf(p,option))}. `:""}Aboná la seña mediante el link de pago del vendedor.</p>
       </div>
-      ${transferBlock}
+      ${p.depositPaidAt?"":transferBlock}
       <div class="public-actions">
-        ${paymentUrl?`<a class="public-seña" href="${escapeHtml(paymentUrl)}" target="_blank" rel="noopener" id="depositLink">PAGAR SEÑA</a>`:hasTransfer?"":`<button class="public-seña" id="depositDemo">PAGAR SEÑA (DEMO)</button>`}
+        ${p.depositPaidAt?"":paymentUrl?`<a class="public-seña" href="${escapeHtml(paymentUrl)}" target="_blank" rel="noopener" id="depositLink">PAGAR SEÑA</a>`:hasTransfer?"":`<button class="public-seña" id="depositDemo">PAGAR SEÑA (DEMO)</button>`}
         <button class="public-whatsapp" id="receiptBtn" type="button">📄 Descargar constancia</button>
         <a class="public-whatsapp" href="https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Acepté la propuesta y quiero avanzar con la seña.`)}" target="_blank" rel="noopener">Escribir al vendedor</a>
       </div>
