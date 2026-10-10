@@ -390,7 +390,7 @@ function publicProposalMarkup(p, mode="full"){
       <div class="public-includes" data-sec="incluye">${includes}</div>
       <div data-sec="pago">${payBlock(p)}</div>
       <p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
-      ${mode==="full"&&p.status!=="expired"?`<div class="pick-summary" id="pickSummary" hidden></div><div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
+      ${mode==="full"&&p.status!=="expired"?`<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div><div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
       <div class="public-actions">
         ${mode==="full"&&p.status!=="expired"?`<div class="cta-note" id="ctaNote"></div>`:""}
         ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${multi?"Quiero esta opción":"Quiero esto"}</button>`:''}
@@ -482,6 +482,18 @@ function attachPublicEvents(p){
     if(sum){sum.hidden=false;sum.innerHTML=`<b>${escapeHtml(o.name)}</b> · ${money(finalPrice(o))}${p.depositPct>0?` · Seña ${money(depositOf(p,o))}`:""}${o.hasInstallments&&o.installments>1?` · ${o.installments} cuotas`:""}`;}
     $$("[data-doubt]").forEach(a=>{a.href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Soy ${p.client.name}. Tengo una duda sobre "${p.title}" (${o.name}, ${money(finalPrice(o))}): ${a.dataset.doubt}.`)}`;});};
   upd(); if(p.options.length>1) markSelected(chosenOf(p).id);
+  $("#remindBtn")?.addEventListener("click",()=>{
+    p.remindAt=Date.now()+864e5; p.lastEvent="Pidió que le recuerden mañana.";
+    state.activity.unshift({icon:"⏰",text:`${p.client.name} pidió que le recuerdes mañana.`,time:"Ahora"}); saveState();
+    toast("Listo, le avisamos a "+(state.business.name||"tu vendedor")+". Te escribirán mañana.");
+    window.open(`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Soy ${p.client.name}. Lo estoy pensando con "${p.title}". ¿Me escribís mañana para retomarlo?`)}`,"_blank","noopener");
+  });
+  $("#shareBtn")?.addEventListener("click",async()=>{
+    const url=shareLink(p), text=`Mirá esta propuesta de ${state.business.name}: ${p.title}`;
+    p.shared=(p.shared||0)+1; state.activity.unshift({icon:"👥",text:`${p.client.name} compartió la propuesta.`,time:"Ahora"}); saveState();
+    try{ if(navigator.share){await navigator.share({title:p.title,text,url});return;} }catch(e){ if(e&&e.name==="AbortError") return; }
+    window.open(`https://wa.me/?text=${encodeURIComponent(text+" "+url)}`,"_blank","noopener");
+  });
   $("#doubtBtn")?.addEventListener("click",()=>{const el=$("#doubtPanel"); el.hidden=!el.hidden; if(!el.hidden) el.scrollIntoView({block:"center",behavior:"smooth"});});
   $$("[data-doubt]").forEach(a=>a.addEventListener("click",()=>{p.doubts=(p.doubts||0)+1;p.lastDoubt=a.dataset.doubt;state.activity.unshift({icon:"🙋",text:`${p.client.name} tiene una duda: ${a.dataset.doubt}.`,time:"Ahora"});saveState();}));
   $$("[data-select-option]",$("#publicContent")).forEach(btn=>{
@@ -598,6 +610,7 @@ function todayItems(){
   const hTxt=h=>h<48?`${Math.floor(h)} h`:`${Math.floor(h/24)} días`;
   state.proposals.forEach(p=>{
     if(p.status==="accepted"&&p.proofSentAt&&!p.depositPaidAt){out.push({p,reason:"💸 Avisó que transfirió: verificá y confirmá la seña.",prio:0});return;}
+    if(p.remindAt&&p.remindAt<=now&&["sent","viewed"].includes(p.status)){out.push({p,reason:"⏰ Pidió que lo contactes hoy.",prio:0});return;}
     if(p.status==="accepted"&&!p.depositPaidAt&&p.depositPct>0){const ha=(now-new Date(p.acceptedAt||p.createdAt).getTime())/36e5;if(ha>=6)out.push({p,reason:`✅ Aceptó hace ${hTxt(ha)} y falta la seña.`,prio:1});return;}
     if(p.status==="lost"){if(p.recontactAt&&p.recontactAt<=now)out.push({p,reason:`🔁 Hora de retomar (${p.lostReason||"perdida"}).`,prio:2});return;}
     if(p.status==="accepted") return;
@@ -653,7 +666,7 @@ function leadScore(p){
   let sc=Math.min(p.views||0,5)*10;
   if((p.views||0)>0&&h<24) sc+=20;
   if(p.chosenOption) sc+=25;
-  sc+=Math.min(p.doubts||0,2)*5;
+  sc+=Math.min(p.doubts||0,2)*5; if(p.shared) sc+=10;
   const E=engOf(p); if(E.total>=180000) sc+=15; else if(E.total>=60000) sc+=10; if(E.scroll>=80) sc+=5; if(E.terms) sc+=5;
   if(daysLeft(p)<=2) sc+=10;
   sc-=Math.max(0,(p.followUps||0)-2)*10;
@@ -676,7 +689,7 @@ async function followUp(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
   const msg=followMsg(p);
   if(Cloud.on){try{await Cloud.rpc("record_follow_up",{p_id:id});}catch(e){if(p.status!=="accepted"&&p.status!=="lost")return toast(e.message||"No se pudo registrar el seguimiento.");}}
-  p.followUps=(p.followUps||0)+1; p.lastFollowUpAt=Date.now(); if(p.status==="lost") p.recontactAt=null;
+  p.followUps=(p.followUps||0)+1; p.lastFollowUpAt=Date.now(); p.remindAt=null; if(p.status==="lost") p.recontactAt=null;
   state.activity.unshift({icon:"🔔",text:`Seguimiento enviado a ${p.client.name}.`,time:"Ahora"});
   saveState(); renderDashboard();
   window.open(`https://wa.me/${normalizePhone(p.client.phone)}?text=${encodeURIComponent(msg)}`,"_blank","noopener");
@@ -781,6 +794,14 @@ async function loadEngTotals(){
   if(!Cloud.on||!currentUser) return;
   try{const sb=await Auth.client(); const {data}=await sb.rpc("engagement_totals"); (data||[]).forEach(r=>{const p=state.proposals.find(x=>x.id===r.proposal_id); if(p){p.engMs=Number(r.ms);p.engSessions=Number(r.sessions);p.engScroll=Number(r.max_scroll);}}); renderDashboard();}catch(e){}
 }
+function initRoi(){
+  const t=$("#roiTicket"),n=$("#roiCount"),c=$("#roiRate"),out=$("#roiOut"); if(!t||!out) return;
+  const plan=29900, fx=v=>String(v).replace(".",",");
+  const calc=()=>{const tk=Math.max(0,Number(t.value)||0),cnt=Math.max(0,Number(n.value)||0),r=Math.min(100,Math.max(0,Number(c.value)||0));
+    const now=Math.round(cnt*r/100), more=Math.max(1,Math.round(cnt*.1)), meses=tk/plan;
+    out.innerHTML=`Hoy cerrás unas <b>${now}</b> ventas por mes. <b>Una sola venta más</b> suma ${money(tk)}: eso cubre ${meses>=1?`unos <b>${fx(meses.toFixed(1))} meses</b> del plan Profesional (${money(plan)})`:"parte del plan Profesional ("+money(plan)+")"}. Si cerraras 10 puntos más, serían ${more} ventas extra: <b>${money(more*tk)}</b> por mes.`;};
+  [t,n,c].forEach(i=>i.addEventListener("input",calc)); calc();
+}
 /* Perdida con motivo y recontacto */
 const LOST_REASONS=["Precio","Eligió a otro","No responde","Postergó","Otro"];
 function openTool(html){$("#toolContent").innerHTML=html;openModal("toolModal");}
@@ -808,6 +829,8 @@ function openHistory(id){
   if(p.views) ev.push({t:lv,i:"👀",x:`Vista ${p.views} ${p.views>1?"veces":"vez"}`});
   if(p.chosenOption) ev.push({t:lv+1,i:"⭐",x:`Eligió ${chosenOf(p).name}`});
   if(p.doubts) ev.push({t:lv+2,i:"🙋",x:`Consultó una duda${p.lastDoubt?`: ${p.lastDoubt}`:""}`});
+  if(p.shared) ev.push({t:lv+3,i:"👥",x:`Compartió la propuesta con otra persona (${p.shared})`});
+  if(p.remindAt) ev.push({t:lv+4,i:"⏰",x:"Pidió que lo contactes mañana"});
   if(p.followUps) ev.push({t:p.lastFollowUpAt||0,i:"🔔",x:`${p.followUps} seguimiento${p.followUps>1?"s":""} enviado${p.followUps>1?"s":""}`});
   if(p.acceptedAt) ev.push({t:t(p.acceptedAt),i:"✅",x:"Aceptó la propuesta"});
   if(p.proofSentAt) ev.push({t:t(p.proofSentAt),i:"💸",x:"Avisó que transfirió"});
@@ -970,6 +993,7 @@ function bind(){
   else nav("home");
   document.addEventListener("click",e=>{if(e.target.closest("[data-tool-close]")||e.target.classList.contains("tool-backdrop")) closeModal("toolModal");});
   startNewsPoll();
+  initRoi();
 
   if("serviceWorker" in navigator){
     window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}),{once:true});
