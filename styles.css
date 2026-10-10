@@ -474,3 +474,12 @@ html.proposal-mode .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 .later-box span{flex:1 1 100%;font-size:13px;font-weight:700;color:var(--ink-2)}
 .later-box button{flex:1 1 150px;min-height:44px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-weight:700;font-size:14px;color:var(--ink);cursor:pointer}
 .later-box button:active{transform:scale(.98)}
+
+/* ===== v17: política de seña, garantía y preguntas frecuentes ===== */
+.assure{margin-top:16px;padding:16px;border:1px solid var(--line);border-radius:14px;background:#fff;display:grid;gap:10px}
+.assure h4{margin:0;font-size:1rem;font-family:var(--font-display)}
+.assure-item{padding:12px 14px;border-radius:12px;background:var(--accent-wash);border:1px solid #bbf7d0}
+.assure-item b{display:block;font-size:14px;color:#14532d}.assure-item p{margin:4px 0 0;font-size:14px;line-height:1.5;color:#14532d}
+.faq-item{border:1px solid var(--line);border-radius:12px;background:var(--soft)}
+.faq-item summary{cursor:pointer;padding:12px 14px;font-weight:700;font-size:14px;min-height:44px;display:flex;align-items:center}
+.faq-item p{margin:0;padding:0 14px 14px;font-size:14px;line-height:1.5;color:var(--ink-2)}
