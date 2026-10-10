@@ -483,3 +483,12 @@ html.proposal-mode .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 .faq-item{border:1px solid var(--line);border-radius:12px;background:var(--soft)}
 .faq-item summary{cursor:pointer;padding:12px 14px;font-weight:700;font-size:14px;min-height:44px;display:flex;align-items:center}
 .faq-item p{margin:0;padding:0 14px 14px;font-size:14px;line-height:1.5;color:var(--ink-2)}
+
+/* ===== v18: foto por opción y "por qué la recomiendo" ===== */
+.choice-photo{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:12px;background:var(--soft);margin-bottom:4px}
+.choice-why{margin:4px 0 2px;padding:10px 12px;border-left:3px solid var(--pc,var(--accent));background:var(--soft);border-radius:0 10px 10px 0;font-size:14px;line-height:1.45;font-style:italic;color:var(--ink-2)}
+.choice-why small{display:block;margin-top:4px;font-style:normal;font-weight:700;color:var(--muted)}
+.photo-field{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;font-weight:700;color:var(--ink-2)}
+.photo-field span{flex:1 1 100%}.photo-field img{width:84px;height:63px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.photo-field input[type=file]{font-size:13px;max-width:100%}
+.choice-photo{aspect-ratio:16/9;max-height:170px}
