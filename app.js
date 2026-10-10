@@ -442,6 +442,7 @@ function markSelected(id){
 }
 
 function renderBuilderPreview(){
+  updatePriceTip();
   const p = {
     kind:builderKind,
     client:{name:$("#clientName").value||"Juan Pérez"},
@@ -841,6 +842,35 @@ function initRoi(){
     out.innerHTML=`Hoy cerrás unas <b>${now}</b> ventas por mes. <b>Una sola venta más</b> suma ${money(tk)}: eso cubre ${meses>=1?`unos <b>${fx(meses.toFixed(1))} meses</b> del plan Profesional (${money(plan)})`:"parte del plan Profesional ("+money(plan)+")"}. Si cerraras 10 puntos más, serían ${more} ventas extra: <b>${money(more*tk)}</b> por mes.`;};
   [t,n,c].forEach(i=>i.addEventListener("input",calc)); calc();
 }
+/* ===== Modo rápido: 3 opciones armadas desde un solo precio ===== */
+function quickOptions(){
+  const base=Number($("#quickPrice").value)||0;
+  if(base<=0) return toast("Ingresá el precio de tu opción principal.");
+  if(builderOptions.some(o=>Number(o.price)>0)&&!confirm("Esto reemplaza las opciones que ya cargaste. ¿Seguir?")) return;
+  const step=base>=50000?1000:100, rd=v=>Math.round(v/step)*step;
+  // La diferencia entre Básica y Recomendada es menor que entre Recomendada y Premium (guía de precios por niveles).
+  builderOptions.splice(0,builderOptions.length,
+    newOption({name:"Básica",price:rd(base*.8),description:"Lo esencial para resolver lo que necesitás."}),
+    newOption({name:"Recomendada",price:rd(base),recommended:true,description:"La mejor relación entre precio y alcance."}),
+    newOption({name:"Premium",price:rd(base*1.3),description:"Alcance completo y máxima tranquilidad."}));
+  renderOptionEditors(); renderBuilderPreview();
+  toast("Listo: ajustá nombres, precios y detalles de cada opción.");
+}
+function updatePriceTip(){
+  const el=$("#priceTip"); if(!el) return;
+  const ps=builderOptions.map(o=>finalPrice(o)).filter(v=>v>0).sort((a,b)=>a-b); let t="";
+  if(builderOptions.length>=4) t="💡 Con 4 opciones el cliente suele dudar más: probá con 3.";
+  else if(ps.length>=3&&ps[1]-ps[0]>=ps[2]-ps[1]) t="💡 Conviene que la diferencia entre la opción económica y la del medio sea menor que entre la del medio y la premium.";
+  else if(ps.length===2&&ps[0]===ps[1]) t="💡 Las dos opciones cuestan lo mismo: el cliente no tiene qué comparar.";
+  el.textContent=t; el.hidden=!t;
+}
+function initQuick(){
+  const list=$("#optionsList"); if(!list||$("#quickBtn")) return;
+  list.insertAdjacentHTML("beforebegin",`<div class="quick-box"><div><b>⚡ Modo rápido</b><small>Poné el precio de tu opción principal y armamos Básica, Recomendada y Premium. Después ajustás lo que quieras.</small></div><div class="quick-row"><input id="quickPrice" type="number" inputmode="numeric" min="0" placeholder="Ej: 850000" aria-label="Precio de la opción principal"><button type="button" class="btn btn-primary" id="quickBtn">Armar 3 opciones</button></div></div>`);
+  list.insertAdjacentHTML("afterend",`<p class="price-tip" id="priceTip" hidden></p>`);
+  $("#quickBtn").addEventListener("click",quickOptions);
+  $("#quickPrice").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();quickOptions();}});
+}
 /* Perdida con motivo y recontacto */
 const LOST_REASONS=["Precio","Eligió a otro","No responde","Postergó","Otro"];
 function openTool(html){$("#toolContent").innerHTML=html;openModal("toolModal");}
@@ -1033,6 +1063,7 @@ function bind(){
   document.addEventListener("click",e=>{if(e.target.closest("[data-tool-close]")||e.target.classList.contains("tool-backdrop")) closeModal("toolModal");});
   startNewsPoll();
   initRoi();
+  initQuick();
 
   if("serviceWorker" in navigator){
     window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}),{once:true});
