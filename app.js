@@ -385,15 +385,16 @@ function publicProposalMarkup(p, mode="full"){
       <div class="public-greeting">Hola ${escapeHtml(p.client.name)} 👋</div>
       <div class="public-title">${escapeHtml(p.title)}</div>
       ${mode==="full"?`<span class="valid">${expiryLine(p)}</span>`:""}
-      ${mode==="full"&&p.status!=="expired"?`<div class="steps"><span><b>1</b> ${multi?"Elegí tu opción":"Revisá la propuesta"}</span><span><b>2</b> Aceptá</span><span><b>3</b> Reservá${p.depositPct>0?" con seña":""}</span></div>`:""}
+      ${mode==="full"&&p.status!=="expired"?`<div class="steps"><span><b>1</b> ${multi?"Elegí tu opción":"Revisá la propuesta"}</span><span><b>2</b> Aceptá</span><span><b>3</b> Reservá${p.depositPct>0?" con seña":""}</span></div><ul class="trust-strip"><li>🔒 Sin cargo al aceptar</li>${p.options.some(o=>o.hasWarranty&&o.warranty)?"<li>🛡️ Garantía</li>":""}<li>💬 Por WhatsApp</li></ul>`:""}
       <div class="choice-grid n${p.options.length}">${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
       <div class="public-includes" data-sec="incluye">${includes}</div>
       <div data-sec="pago">${payBlock(p)}</div>
       <p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
       ${mode==="full"&&p.status!=="expired"?`<div class="pick-summary" id="pickSummary" hidden></div><div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
       <div class="public-actions">
+        ${mode==="full"&&p.status!=="expired"?`<div class="cta-note" id="ctaNote"></div>`:""}
         ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${multi?"Quiero esta opción":"Quiero esto"}</button>`:''}
-        ${mode==="full"?`<a class="public-whatsapp" id="publicWhatsapp" href="#" target="_blank" rel="noopener">Hablar por WhatsApp</a>`:""}
+        ${mode==="full"?`<a class="public-whatsapp" id="publicWhatsapp" href="#" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}
         ${mode==="full"&&p.status!=="expired"?`<button type="button" class="public-doubt" id="doubtBtn">🙋 Tengo una duda</button>`:""}
       </div>
       <div class="public-foot">${expiryLine(p)} · Propuesta digital CierraClick</div>
@@ -476,6 +477,8 @@ async function openPublic(id,preview=false,quiet=false){
 }
 function attachPublicEvents(p){
   const upd=()=>{const o=chosenOf(p), sum=$("#pickSummary");
+    const ab=$("#acceptBtn"); if(ab) ab.textContent=`Quiero ${p.options.length>1?o.name:"esto"} · ${money(finalPrice(o))}`;
+    const cn=$("#ctaNote"); if(cn) cn.textContent=p.depositPct>0?`Aceptar no te cobra nada. Después reservás con la seña de ${money(depositOf(p,o))}.`:"Aceptar no te cobra nada todavía.";
     if(sum){sum.hidden=false;sum.innerHTML=`<b>${escapeHtml(o.name)}</b> · ${money(finalPrice(o))}${p.depositPct>0?` · Seña ${money(depositOf(p,o))}`:""}${o.hasInstallments&&o.installments>1?` · ${o.installments} cuotas`:""}`;}
     $$("[data-doubt]").forEach(a=>{a.href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Soy ${p.client.name}. Tengo una duda sobre "${p.title}" (${o.name}, ${money(finalPrice(o))}): ${a.dataset.doubt}.`)}`;});};
   upd(); if(p.options.length>1) markSelected(chosenOf(p).id);
