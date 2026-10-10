@@ -42,7 +42,7 @@ const KINDS={
   service:{title:"Propuesta de servicio",includes:"Instalación\nMateriales principales\nSoporte inicial",ph:"Ej: Servicio completo"}
 };
 const MAX_OPTIONS=4;
-const newOption=(o={})=>({id:`o-${Math.random().toString(36).slice(2,8)}`,name:"",price:0,discountType:"percent",discountValue:0,description:"",hasInstallments:false,installments:3,hasWarranty:false,warranty:"",features:"",terms:"",recommended:false,...o});
+const newOption=(o={})=>({id:`o-${Math.random().toString(36).slice(2,8)}`,name:"",price:0,discountType:"percent",discountValue:0,description:"",hasInstallments:false,installments:3,hasWarranty:false,warranty:"",features:"",terms:"",recommended:false,why:"",photo:"",...o});
 function discountAmount(o){
   const pr=Number(o.price)||0, v=Math.max(0,Number(o.discountValue)||0);
   return Math.min(pr,o.discountType==="percent"?pr*Math.min(v,100)/100:v);
@@ -168,7 +168,7 @@ const Cloud={
     state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,depositPolicy:b.deposit_policy,faq:b.faq,alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
     state.clients=Object.values(state.proposals.reduce((a,p)=>{const k=p.client.phone||p.client.name;a[k]||(a[k]={...p.client,proposals:0});a[k].proposals++;return a;},{}));fillSettings();renderDashboard();
   },
-  async publicProposal(id){const r=await this.rpc("get_public_proposal",{p_id:id}); if(r){try{const x=await this.rpc("get_public_extras",{p_id:id}); if(x) r.business={...(r.business||{}),...x};}catch(e){}} return r;}
+  async publicProposal(id){const r=await this.rpc("get_public_proposal",{p_id:id}); if(r){try{const x=await this.rpc("get_public_extras",{p_id:id}); if(x) r.business={...(r.business||{}),...x};}catch(e){} try{const ox=await this.rpc("get_public_option_extras",{p_id:id}); if(ox&&r.options) r.options.forEach(o=>{const x=ox[o.id]; if(x){o.why=x.why;o.photo=x.photo;}}); r._ex=true;}catch(e){}} return r;}
 };
 function applyUser(u){
   currentUser=u; STORAGE_KEY=`cierraclick_u_${u.id}`; state=loadState();
@@ -284,6 +284,8 @@ function renderOptionEditors(){
           <div class="toggle full"><label class="chk"><input type="checkbox" data-field="hasWarranty" ${o.hasWarranty?"checked":""}> Incluir garantía</label><input data-field="warranty" value="${escapeHtml(o.warranty)}" placeholder="Ej: 6 meses" ${o.hasWarranty?"":"disabled"}></div>
           <label class="full">Características (una por línea)<textarea data-field="features" rows="3" placeholder="Ej: Envío gratis&#10;Instalación incluida">${escapeHtml(o.features)}</textarea></label>
           <label class="full">Términos y condiciones de esta opción<textarea data-field="terms" rows="2">${escapeHtml(o.terms)}</textarea></label>
+          <label class="full">Por qué la recomiendo / frase para el cliente<input data-field="why" maxlength="300" value="${escapeHtml(o.why||"")}" placeholder="Ej: Es la que mejor relación precio-calidad tiene para tu caso."></label>
+          <div class="photo-field full"><span>Foto de esta opción (opcional)</span>${o.photo?`<img src="${o.photo}" alt="Foto"><button type="button" class="text-btn" data-photo-del>Quitar foto</button>`:`<input type="file" data-photo accept="image/*">`}</div>
         </div>
       </details>
       <div class="option-total full" data-total>${totalText(o)}</div>
@@ -319,6 +321,27 @@ function onOptionInput(e){
     renderOptionEditors();
   } else $("[data-total]",row).textContent=totalText(o);
   renderBuilderPreview();
+}
+function resizePhoto(file,max=720,q=.72){
+  return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);
+    img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL("image/jpeg",q));};
+    img.onerror=()=>rej(new Error("No se pudo leer la imagen."));img.src=u;});
+}
+document.addEventListener("change",async e=>{
+  const t=e.target; if(!t.matches||!t.matches("[data-photo]")||!t.files[0]) return;
+  const row=t.closest("[data-idx]"), o=builderOptions[row.dataset.idx];
+  try{o.photo=await resizePhoto(t.files[0]); o._open=true; renderOptionEditors(); renderBuilderPreview();}catch(err){toast(err.message);}
+});
+document.addEventListener("click",e=>{
+  const b=e.target.closest&&e.target.closest("[data-photo-del]"); if(!b) return;
+  const o=builderOptions[b.closest("[data-idx]").dataset.idx]; o.photo=""; o._open=true; renderOptionEditors(); renderBuilderPreview();
+});
+async function saveOptionExtras(id,p){
+  if(!p.options.some(o=>o.why||o.photo)) return;
+  try{await Cloud.rpc("set_option_extras",{p_id:id,p_extras:p.options.map(o=>({why:o.why||"",photo:o.photo||""}))});
+    const r=state.proposals.find(x=>x.id===id); if(r) r.options.forEach((o,i)=>{if(p.options[i]){o.why=p.options[i].why;o.photo=p.options[i].photo;}});
+  }catch(e){toast("La propuesta se creó, pero la foto y la frase no se guardaron: falta ejecutar supabase_fotos.sql.");}
 }
 function setKind(k){
   const prev=KINDS[builderKind];
@@ -362,11 +385,13 @@ function optionMarkup(p,o,mode){
   const feats=(o.features||"").trim()?`<ul class="feat">${o.features.split("\n").map(x=>x.trim()).filter(Boolean).map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul>`:"";
   return `
     <article class="choice ${rec?"recommended":""}" data-choice="${escapeHtml(o.id)}">
+      ${o.photo?`<img class="choice-photo" src="${o.photo}" alt="${escapeHtml(o.name)}" loading="lazy">`:""}
       <header class="choice-head"><h4>${escapeHtml(o.name)}</h4>${rec?'<span class="tag">⭐ Recomendada</span>':""}</header>
       <div class="choice-price">
         ${d>0?`<div class="price-row"><span class="price-old">${money(o.price)}</span><span class="disc">${badge}</span></div>`:""}
         <div class="price">${money(fin)}</div>
       </div>
+      ${o.why?`<blockquote class="choice-why">💬 ${escapeHtml(o.why)}<small>— ${escapeHtml(state.business.name||"")}</small></blockquote>`:""}
       ${meta?`<div class="choice-meta">${meta}</div>`:""}
       ${o.description?`<p>${escapeHtml(o.description)}</p>`:""}
       ${o.hasWarranty&&o.warranty?`<p>🛡️ Garantía: ${escapeHtml(o.warranty)}</p>`:""}
@@ -439,7 +464,7 @@ function openBuilder(){
 async function createProposal(e){
   e.preventDefault();
   const p=collectBuilderData();
-  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined}});await Cloud.hydrate();const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
+  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
   state.proposals.unshift(p);
   const existing=state.clients.find(c=>c.phone===p.client.phone);
   if(existing) existing.proposals+=1;
@@ -468,6 +493,7 @@ async function openPublicLink(id){
 async function openPublic(id,preview=false,quiet=false){
   if(Cloud.on&&!preview){try{const remote=await Cloud.publicProposal(id);if(!remote)return toast("No se encontró la propuesta.");const p={...remote,createdAt:remote.createdAt||new Date().toISOString()};state.business={...state.business,...remote.business};state.proposals=[p,...state.proposals.filter(x=>x.id!==id)];await Cloud.rpc("track_proposal",{p_id:id,p_type:"view"});return openPublic(id,true,true);}catch(e){return toast(e.message||"No se pudo abrir la propuesta.");}}
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
+  if(Cloud.on&&currentUser&&!p._ex){p._ex=true;try{const ox=await Cloud.rpc("get_public_option_extras",{p_id:id});(p.options||[]).forEach(o=>{const x=ox&&ox[o.id];if(x){o.why=x.why;o.photo=x.photo;}});}catch(e){}}
   currentProposalId=id;
   if(!preview){
   p.views=(p.views||0)+1; p.lastViewedAt=Date.now();
