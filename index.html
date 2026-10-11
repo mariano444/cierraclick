@@ -8,7 +8,7 @@
   <!--OG:start-->
     <title>CierraClick · Propuestas que se cierran por WhatsApp</title>
     <meta name="description" content="Armá una propuesta con opciones, descuentos y seña en minutos. Tu cliente la elige desde el celular y vos cerrás más ventas.">
-    <link rel="canonical" href="https://TU-DOMINIO.com/">
+    <link rel="canonical" href="https://cierraclick.netlify.app/">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="CierraClick">
     <meta property="og:locale" content="es_AR">
@@ -265,6 +265,7 @@
               <div class="avatar-field"><div class="avatar-preview" id="avatarPreview">?</div><div><b>Foto de perfil</b><small>Se muestra en tus propuestas, junto al nombre de tu negocio.</small><input type="file" id="avatarInput" accept="image/*"><button type="button" class="text-btn" id="avatarDel" hidden>Quitar foto</button></div></div>
               <label>Política de seña (opcional, la ve el cliente)<textarea name="depositPolicy" rows="3" maxlength="600" placeholder="Ej: La seña se descuenta del total. Si cancelás con 48 h de aviso, te la devolvemos."></textarea></label>
               <label>Preguntas frecuentes (una por línea: Pregunta | Respuesta)<textarea name="faq" rows="5" maxlength="2000" placeholder="¿Cuánto tarda? | 15 días hábiles desde la seña.&#10;¿Incluye la instalación? | Sí, está incluida en todas las opciones."></textarea></label>
+              <label>Qué pasa después de reservar (una por línea: Paso | Detalle | Plazo). Poné tus plazos reales<textarea name="afterSteps" rows="4" maxlength="800" placeholder="Reservás con la seña | Te confirmo por WhatsApp | Al instante&#10;Coordinamos | Acordamos fecha y detalles | En 24 h&#10;Entrega o turno | Hacemos el trabajo | Fecha acordada"></textarea></label>
               <div class="form-actions"><button class="btn btn-primary">Guardar configuración</button></div>
             </form>
           </div>
@@ -322,6 +323,15 @@
 Materiales principales
 Soporte inicial</textarea>
               <label>Notas / condiciones<textarea id="conditions" rows="3">La propuesta queda vigente durante el plazo indicado. La reserva se confirma con la seña.</textarea></label>
+            </section>
+            <section class="form-card">
+              <h3>Incentivos y mensaje</h3>
+              <p class="hint">Todo es opcional. Usá solo incentivos que vas a cumplir: el cliente los ve con cuenta regresiva.</p>
+              <div class="voice-field"><span class="option-label">MENSAJE PERSONAL EN AUDIO (HASTA 30 s)</span><div id="voiceField"></div></div>
+              <label>Bonus por aceptar a tiempo<input id="bonusText" maxlength="140" placeholder="Ej: 3% extra de descuento o instalación gratis"></label>
+              <label>El bonus vale durante (horas desde que la enviás)<input id="bonusHours" type="number" min="1" max="168" value="48"></label>
+              <label>Cupos reales disponibles (vacío = no mostrar)<input id="slotsLeft" type="number" min="0" max="999" inputmode="numeric" placeholder="Ej: 2"></label>
+              <label>Qué son esos cupos (si queda 1, escribilo en singular)<input id="slotsLabel" maxlength="60" placeholder="Ej: turnos esta semana"></label>
             </section>
           </div>
           <aside class="builder-preview">
