@@ -165,7 +165,7 @@ const Cloud={
     const [biz,props,catalog,events]=await Promise.all([sb.from("businesses").select("*").eq("owner_id",currentUser.id).single(),sb.from("proposals").select("*,clients(name,phone),proposal_options!proposal_options_proposal_id_fkey(*)").order("created_at",{ascending:false}),sb.from("catalog_items").select("*").order("updated_at",{ascending:false}),sb.from("proposal_events").select("type,message,created_at").order("created_at",{ascending:false}).limit(12)]);
     if(biz.error||props.error||catalog.error||events.error)throw biz.error||props.error||catalog.error||events.error;
     const b=biz.data;
-    state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,depositPolicy:b.deposit_policy,faq:b.faq,alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
+    state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,depositPolicy:b.deposit_policy,faq:b.faq,photo:b.photo||"",alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
     state.clients=Object.values(state.proposals.reduce((a,p)=>{const k=p.client.phone||p.client.name;a[k]||(a[k]={...p.client,proposals:0});a[k].proposals++;return a;},{}));fillSettings();renderDashboard();
   },
   async publicProposal(id){const r=await this.rpc("get_public_proposal",{p_id:id}); if(r){try{const x=await this.rpc("get_public_extras",{p_id:id}); if(x) r.business={...(r.business||{}),...x};}catch(e){} try{const ox=await this.rpc("get_public_option_extras",{p_id:id}); if(ox&&r.options) r.options.forEach(o=>{const x=ox[o.id]; if(x){o.why=x.why;o.photo=x.photo;}}); r._ex=true;}catch(e){}} return r;}
@@ -186,6 +186,7 @@ function setAuthTab(t){
   $("#authNote").textContent=Auth.remote?"":"Modo demo: la cuenta se guarda solo en este navegador.";
 }
 function fillSettings(){
+  updateAvatarPreview();
   const f=$("#settingsForm"), b=state.business;
   Object.entries({businessName:b.name,whatsapp:b.whatsapp,paymentLink:b.paymentLink,brandColor:b.brandColor,holder:b.holder,bank:b.bank,cbu:b.cbu,alias:b.alias,cuit:b.cuit,transferNote:b.transferNote,depositPolicy:b.depositPolicy,faq:b.faq})
     .forEach(([k,v])=>{if(f.elements[k]) f.elements[k].value=v??"";});
@@ -406,8 +407,9 @@ function faqItems(b){
 }
 function assuranceMarkup(p){
   const b=state.business, items=faqItems(b), pol=(b.depositPolicy||"").trim(), war=p.options.filter(o=>o.hasWarranty&&o.warranty);
-  if(!items.length&&!pol&&!war.length) return "";
+  const rv=reviewsMarkup(); if(!items.length&&!pol&&!war.length&&!rv) return "";
   return `<section class="assure" data-sec="garantias"><h4>Antes de decidir</h4>
+    ${rv}
     ${pol?`<div class="assure-item"><b>🔒 Sobre la seña</b><p>${escapeHtml(pol)}</p></div>`:""}
     ${war.length?`<div class="assure-item"><b>🛡️ Garantía</b><p>${war.map(o=>`${escapeHtml(o.name)}: ${escapeHtml(o.warranty)}`).join(" · ")}</p></div>`:""}
     ${items.map(x=>`<details class="faq-item"><summary>${escapeHtml(x.q)}</summary><p>${escapeHtml(x.a)}</p></details>`).join("")}</section>`;
@@ -417,7 +419,7 @@ function publicProposalMarkup(p, mode="full"){
   const includes=(p.includes||[]).map(x=>`<div class="include">✓ ${escapeHtml(x)}</div>`).join("");
   return `
     <div class="public-card" data-public-id="${escapeHtml(p.id)}" style="--pc:${brandStyle()}">
-      <div class="public-brand"><span class="avatar">${escapeHtml((state.business.name||"?").trim().charAt(0).toUpperCase())}</span>${escapeHtml(state.business.name).toUpperCase()}</div>
+      <div class="public-brand">${avatarHtml()}${escapeHtml(state.business.name).toUpperCase()}${ratingChip()}</div>
       <div class="public-greeting">Hola ${escapeHtml(p.client.name)} 👋</div>
       <div class="public-title">${escapeHtml(p.title)}</div>
       ${mode==="full"?`<span class="valid">${expiryLine(p)}</span>`:""}
@@ -555,14 +557,14 @@ function attachPublicEvents(p){
     renderAcceptedState(p);
   });
 }
-function renderAcceptedState(p){
+function renderAcceptedStateBase(p){
   const option=chosenOf(p);
   const paymentUrl=state.business.paymentLink||"", b=state.business, dep=depositOf(p,option), hasTransfer=!!(b.cbu||b.alias);
   const trow=(l,v,c)=>v?`<div class="tr-row"><span>${l}</span><b>${escapeHtml(v)}</b>${c?`<button type="button" class="text-btn" data-copy="${escapeHtml(v)}">Copiar</button>`:""}</div>`:"";
   const transferBlock=hasTransfer?`<div class="card transfer"><strong>Transferí la seña${dep?` de ${money(dep)}`:""}</strong>${trow("Titular",b.holder)}${trow("Banco",b.bank)}${trow("CBU/CVU",b.cbu,1)}${trow("Alias",b.alias,1)}${trow("CUIT/CUIL",b.cuit)}${b.transferNote?`<p class="hint">${escapeHtml(b.transferNote)}</p>`:""}<button type="button" class="public-whatsapp" id="proofBtn">${p.proofSentAt?"✅ Aviso enviado · reenviar":"💸 Ya transferí · enviar comprobante"}</button></div>`:"";
   $("#publicContent").innerHTML=`
     <div class="public-card" style="--pc:${brandStyle()}">
-      <div class="public-brand"><span class="avatar">${escapeHtml((state.business.name||"?").trim().charAt(0).toUpperCase())}</span>${escapeHtml(state.business.name).toUpperCase()}</div>
+      <div class="public-brand">${avatarHtml()}${escapeHtml(state.business.name).toUpperCase()}${ratingChip()}</div>
       <div class="public-greeting">¡Excelente, ${escapeHtml(p.client.name)}! ✅</div>
       <p style="color:#64748b">Tu elección quedó registrada: <strong>${escapeHtml(option.name)}</strong> · ${money(finalPrice(option))}</p>
       ${p.depositPaidAt?`<div class="pick-summary">💰 <b>Seña recibida.</b> ¡Tu reserva está confirmada!</div>`:p.proofSentAt?`<div class="pick-summary">💸 Avisaste que transferiste. ${escapeHtml(b.name)} lo está verificando.</div>`:""}
@@ -595,7 +597,7 @@ function renderGreeting(){
 }
 let _engBoot=false;
 function renderDashboard(){
-  if(Cloud.on&&currentUser&&!_engBoot){_engBoot=true;loadEngTotals();}
+  if(Cloud.on&&currentUser&&!_engBoot){_engBoot=true;loadEngTotals();loadReviews();}
   renderGreeting();
   if(syncExpired(state.proposals)) saveState();
   const proposals=state.proposals||[];
@@ -887,6 +889,81 @@ function salesMetrics(ps){
   return {rate,real,closed,nOpen:openP.length,open:openP.reduce((x,p)=>x+price(p),0),
     forecast:Math.round(openP.reduce((x,p)=>x+price(p)*prob(p),0)),hot:openP.filter(p=>leadScore(p)>=60).reduce((x,p)=>x+price(p),0)};
 }
+/* ===== Foto de perfil, estrellas y comentarios ===== */
+const stars=n=>"★".repeat(n)+"☆".repeat(5-n);
+const fmtAvg=v=>(Math.round(v*10)/10).toFixed(1).replace(".",",");
+function resizeSquare(file,size=256,q=.82){
+  return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);
+    img.onload=()=>{const m=Math.min(img.width,img.height),c=document.createElement("canvas");c.width=c.height=size;
+      c.getContext("2d").drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,size,size);URL.revokeObjectURL(u);res(c.toDataURL("image/jpeg",q));};
+    img.onerror=()=>rej(new Error("No se pudo leer la imagen."));img.src=u;});
+}
+function avatarHtml(){
+  const b=state.business||{};
+  return b.photo?`<span class="avatar has-photo"><img src="${b.photo}" alt=""></span>`:`<span class="avatar">${escapeHtml((b.name||"?").trim().charAt(0).toUpperCase())}</span>`;
+}
+function updateAvatarPreview(){
+  const el=$("#avatarPreview"); if(!el) return; const b=state.business||{};
+  el.innerHTML=b.photo?`<img src="${b.photo}" alt="Foto de perfil">`:escapeHtml((b.name||"?").trim().charAt(0).toUpperCase());
+  const d=$("#avatarDel"); if(d) d.hidden=!b.photo;
+}
+document.addEventListener("change",async e=>{
+  if(!e.target.matches||!e.target.matches("#avatarInput")||!e.target.files[0]) return;
+  try{state.business.photo=await resizeSquare(e.target.files[0]); saveState(); updateAvatarPreview(); toast("Foto lista. Tocá «Guardar configuración» para publicarla.");}catch(err){toast(err.message);}
+});
+document.addEventListener("click",e=>{
+  if(e.target.closest&&e.target.closest("#avatarDel")){state.business.photo=""; saveState(); updateAvatarPreview(); toast("Foto quitada. Guardá la configuración para confirmar.");}
+});
+function getReviews(){
+  const b=state.business||{};
+  if(Array.isArray(b.reviews)&&b.rating) return {avg:Number(b.rating.avg)||0,count:Number(b.rating.count)||0,
+    list:b.reviews.map(r=>({stars:r.stars,comment:r.comment,author:r.author,at:r.created_at?new Date(r.created_at).getTime():(r.at||0)}))};
+  const rs=(state.proposals||[]).filter(p=>p.review&&p.review.stars).map(p=>({stars:p.review.stars,comment:p.review.comment||"",author:(p.client.name||"").split(" ")[0],at:p.review.at||0}));
+  const c=rs.length;
+  return {avg:c?rs.reduce((x,r)=>x+r.stars,0)/c:0,count:c,list:rs.filter(r=>r.comment).sort((x,y)=>y.at-x.at).slice(0,5)};
+}
+function ratingChip(){const r=getReviews(); return r.count?`<span class="rating-chip">★ ${fmtAvg(r.avg)} · ${r.count} ${r.count>1?"opiniones":"opinión"}</span>`:"";}
+const reviewCard=r=>`<figure class="review"><div class="review-stars">${stars(r.stars)}</div><blockquote>${escapeHtml(r.comment)}</blockquote><figcaption>— ${escapeHtml(r.author||"Cliente")} · propuesta aceptada</figcaption></figure>`;
+function reviewsMarkup(){
+  const r=getReviews(); if(!r.count) return "";
+  return `<div class="reviews-box"><div class="rev-sum"><strong>${fmtAvg(r.avg)}</strong><span class="review-stars">${stars(Math.round(r.avg))}</span><small>${r.count} opinión${r.count>1?"es":""} de clientes</small></div>${r.list.slice(0,3).map(reviewCard).join("")}</div>`;
+}
+function reviewsPanel(){
+  const r=getReviews();
+  return `<div class="loss-list"><b>⭐ Opiniones de tus clientes</b>${r.count?`<div class="rev-sum"><strong>${fmtAvg(r.avg)}</strong><span class="review-stars">${stars(Math.round(r.avg))}</span><small>${r.count} opinión${r.count>1?"es":""}</small></div>${r.list.map(reviewCard).join("")}`:'<p style="color:#64748b;margin:6px 0 0">Todavía no hay opiniones. Aparecen cuando un cliente que aceptó una propuesta deja la suya desde su enlace.</p>'}</div>`;
+}
+function renderPerfExtras(){renderPerfExtrasBase(); const box=$("#perfExtras"); if(box) box.insertAdjacentHTML("beforeend",reviewsPanel());}
+async function loadReviews(){
+  if(!Cloud.on||!currentUser) return;
+  try{const sb=await Auth.client(); const {data}=await sb.from("proposal_reviews").select("stars,comment,author,created_at").order("created_at",{ascending:false}).limit(100);
+    const rows=data||[], c=rows.length;
+    state.business.rating={avg:c?rows.reduce((x,r)=>x+r.stars,0)/c:0,count:c}; state.business.reviews=rows.filter(r=>r.comment).slice(0,5);}catch(e){}
+}
+function reviewFormMarkup(p){
+  const rv=p.review, bn=escapeHtml(state.business.name||"el negocio");
+  if(rv&&rv.stars&&!p._editReview) return `<section class="review-box" id="reviewBox"><h4>Tu opinión</h4><div class="review-stars big">${stars(rv.stars)}</div>${rv.comment?`<p>“${escapeHtml(rv.comment)}”</p>`:""}<button type="button" class="text-btn" id="reviewEdit">Editar mi opinión</button></section>`;
+  return `<section class="review-box" id="reviewBox"><h4>Dejá tu opinión sobre ${bn}</h4><p class="tool-sub">Ayuda a otras personas a decidir. Es opcional.</p>
+    <div class="star-pick" role="radiogroup" aria-label="Calificación">${[1,2,3,4,5].map(n=>`<button type="button" class="star-btn ${rv&&rv.stars>=n?"on":""}" data-star="${n}" role="radio" aria-label="${n} estrella${n>1?"s":""}">★</button>`).join("")}</div>
+    <textarea id="reviewText" rows="3" maxlength="500" placeholder="Contá cómo fue tu experiencia (opcional)">${escapeHtml(rv?rv.comment||"":"")}</textarea>
+    <button type="button" class="btn btn-primary" id="reviewSend">Enviar opinión</button></section>`;
+}
+function renderReviewBox(p){const box=$("#reviewBox"); if(box){box.outerHTML=reviewFormMarkup(p); attachReview(p);}}
+function attachReview(p){
+  let sel=p.review?p.review.stars:0;
+  $$("[data-star]").forEach(b=>b.addEventListener("click",()=>{sel=Number(b.dataset.star); $$("[data-star]").forEach(x=>x.classList.toggle("on",Number(x.dataset.star)<=sel));}));
+  $("#reviewEdit")?.addEventListener("click",()=>{p._editReview=true; renderReviewBox(p);});
+  $("#reviewSend")?.addEventListener("click",async()=>{
+    if(!sel) return toast("Elegí cuántas estrellas das.");
+    const comment=($("#reviewText").value||"").trim().slice(0,500);
+    if(Cloud.on){try{await Cloud.rpc("submit_review",{p_id:p.id,p_stars:sel,p_comment:comment});}catch(e){return toast(e.message||"No se pudo enviar tu opinión.");}}
+    p.review={stars:sel,comment,at:Date.now()}; p._editReview=false; saveState(); toast("¡Gracias por tu opinión!"); renderReviewBox(p);
+  });
+}
+function renderAcceptedState(p){
+  if(!p.review&&Cloud.on&&state.business.review) p.review=state.business.review;
+  renderAcceptedStateBase(p);
+  const card=$("#publicContent .public-card"); if(card){card.insertAdjacentHTML("beforeend",reviewFormMarkup(p)); attachReview(p);}
+}
 /* Perdida con motivo y recontacto */
 const LOST_REASONS=["Precio","Eligió a otro","No responde","Postergó","Otro"];
 function openTool(html){$("#toolContent").innerHTML=html;openModal("toolModal");}
@@ -926,7 +1003,7 @@ function openHistory(id){
   fillEngagement(p);
 }
 /* Métricas de seguimiento dentro de Performance */
-function renderPerfExtras(){
+function renderPerfExtrasBase(){
   const ps=state.proposals||[]; let box=$("#perfExtras");
   if(!box){box=document.createElement("div");box.id="perfExtras";box.className="perf-extras";$("#panel-performance").appendChild(box);}
   const by={}; ps.filter(p=>p.status==="lost").forEach(p=>{const r=p.lostReason||"Sin motivo";by[r]=(by[r]||0)+1;});
@@ -965,7 +1042,7 @@ function startNewsPoll(){
       else if(p.chosenOption&&p.chosenOption!==b.c) msg=msg||`⭐ ${p.client.name} eligió una opción`;
       else if((p.views||0)>b.v) msg=msg||`👀 ${p.client.name} abrió la propuesta`;});
     if(msg){toast(msg);_unread++;document.title=`(${_unread}) ${BASE_TITLE}`;try{if(window.Notification&&Notification.permission==="granted")new Notification(msg);}catch(e){}}
-    loadEngTotals(); renderDashboard();
+    loadEngTotals(); loadReviews(); renderDashboard();
   },45000);
 }
 function statusLabel(s){return ({sent:"Enviada",viewed:"Vista",accepted:"Aceptada",lost:"Perdida",expired:"Vencida"}[s]||"Enviada")}
@@ -1069,7 +1146,7 @@ function bind(){
     if(cbu&&!/^\d{22}$/.test(cbu)) return toast("El CBU/CVU debe tener 22 números.");
     if(alias&&!/^[A-Za-z0-9.\-]{6,20}$/.test(alias)) return toast("El alias debe tener 6 a 20 letras, números, puntos o guiones.");
     state.business={...state.business,name:g("businessName"),whatsapp:g("whatsapp"),paymentLink:g("paymentLink"),brandColor:g("brandColor"),holder:g("holder"),bank:g("bank"),cbu,alias,cuit:g("cuit"),transferNote:g("transferNote"),depositPolicy:g("depositPolicy"),faq:g("faq")};
-    if(Cloud.on){try{const sb=await Auth.client();const {error}=await sb.from("businesses").update({name:state.business.name,whatsapp:state.business.whatsapp,payment_link:state.business.paymentLink,deposit_policy:state.business.depositPolicy||"",faq:state.business.faq||"",brand_color:state.business.brandColor,holder:state.business.holder,bank:state.business.bank,cbu,alias,cuit:state.business.cuit,transfer_note:state.business.transferNote}).eq("owner_id",currentUser.id);if(error)throw error;}catch(ex){return toast(ex.message||"No se pudo guardar la configuración.");}}
+    if(Cloud.on){try{const sb=await Auth.client();const {error}=await sb.from("businesses").update({name:state.business.name,whatsapp:state.business.whatsapp,payment_link:state.business.paymentLink,deposit_policy:state.business.depositPolicy||"",photo:state.business.photo||"",faq:state.business.faq||"",brand_color:state.business.brandColor,holder:state.business.holder,bank:state.business.bank,cbu,alias,cuit:state.business.cuit,transfer_note:state.business.transferNote}).eq("owner_id",currentUser.id);if(error)throw error;}catch(ex){return toast(ex.message||"No se pudo guardar la configuración.");}}
     saveState(); toast("Configuración guardada.");
   });
 
