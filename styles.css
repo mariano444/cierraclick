@@ -501,3 +501,7 @@ html.proposal-mode .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 .quick-row .btn{flex:1 1 150px}
 .price-tip{margin:10px 0 0;padding:10px 12px;border-radius:12px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:13px;line-height:1.45}
 .price-tip[hidden]{display:none}
+
+/* ===== v20: dinero recuperado y pronóstico ===== */
+.perf-hl{border-color:#86efac;background:var(--accent-wash)}.perf-hl strong{color:#14532d}.perf-hl small{color:#166534}
+.week-row{flex-wrap:wrap;row-gap:8px}
