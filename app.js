@@ -418,6 +418,7 @@ function optionMarkup(p,o,mode){
       ${o.description?`<p>${escapeHtml(o.description)}</p>`:""}
       ${o.hasWarranty&&o.warranty?`<p>🛡️ Garantía: ${escapeHtml(o.warranty)}</p>`:""}
       ${feats}
+      ${diffMarkup(p,o)}
       ${(o.terms||"").trim()?`<details class="terms"><summary>Términos y condiciones</summary><p>${escapeHtml(o.terms)}</p></details>`:""}
       ${mode==="full"&&multi&&p.status!=="expired"?`<button class="select" data-select-option="${escapeHtml(o.id)}" aria-label="Elegir ${escapeHtml(o.name)}">Elegir esta opción</button>`:""}
     </article>`;
@@ -449,7 +450,7 @@ function publicProposalMarkup(p, mode="full"){
       ${mode==="full"&&p.status!=="expired"?`<div class="steps"><span><b>1</b> ${multi?"Elegí tu opción":"Revisá la propuesta"}</span><span><b>2</b> Aceptá</span><span><b>3</b> Reservá${p.depositPct>0?" con seña":""}</span></div><ul class="trust-strip"><li>🔒 Sin cargo al aceptar</li>${p.options.some(o=>o.hasWarranty&&o.warranty)?"<li>🛡️ Garantía</li>":""}<li>💬 Por WhatsApp</li></ul>`:""}
       ${p.status!=="expired"?perksMarkup(p):""}
       ${p.status!=="expired"?compareMarkup(p,mode):""}
-      ${multi&&mode==="full"?carouselTabsMarkup(p):""}<div class="choice-grid n${p.options.length}${multi&&mode==="full"?" cc-carousel":""}"${multi&&mode==="full"?' tabindex="0" role="group" aria-roledescription="carrusel" aria-label="Opciones de la propuesta"':""}>${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
+      ${multi&&mode==="full"&&p.status!=="expired"?pickHelperMarkup(p):""}${multi&&mode==="full"?carouselTabsMarkup(p):""}<div class="choice-grid n${p.options.length}${multi&&mode==="full"?" cc-carousel":""}"${multi&&mode==="full"?' tabindex="0" role="group" aria-roledescription="carrusel" aria-label="Opciones de la propuesta"':""}>${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
       <div class="public-includes" data-sec="incluye">${includes}</div>
       <div data-sec="pago">${payBlock(p)}</div>
       <p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
@@ -543,6 +544,7 @@ async function openPublic(id,preview=false,quiet=false){
   markSelected(sel.id);
   openModal("publicModal");
   initChoiceCarousel();
+  initPickHelper();
   if(p.status==="accepted"){ renderAcceptedState(p); if(!preview||quiet) startTracker(p); return; }
   attachPublicEvents(p);
   if(!preview||quiet) startTracker(p);
@@ -1710,6 +1712,7 @@ function initChoiceCarousel(){
     ab.textContent=(!o||o.id===sel.id)?ctaLabel(p,sel):`Elegir ${o.name} · ${money(finalPrice(o))}`;
   };
   window.__ccSync=syncCta;
+  window.__ccGoTo=id=>{const i=cards.findIndex(c=>c.dataset.choice===id); if(i>=0&&mq.matches) goTo(i);};
   root.addEventListener("click",e=>{
     const ab=e.target.closest&&e.target.closest("#acceptBtn"); if(!ab||!mq.matches||active<0) return;
     const p=state.proposals.find(x=>x.id===currentProposalId), el=cards[active]; if(!p||!el||el.dataset.choice===chosenOf(p).id) return;
@@ -1734,4 +1737,63 @@ function celebratePick(id){
   if(cta){cta.classList.remove("nudge"); void cta.offsetWidth; cta.classList.add("nudge");}
   try{navigator.vibrate&&navigator.vibrate(12);}catch(e){}
   if(window.__ccSync) window.__ccSync();
+}
+
+
+/* ===== Qué cambia entre opciones =====
+   Ancla cada opción contra la recomendada (o la más económica): cuánto más/menos cuesta y qué suma o qué no incluye.
+   Solo usa datos reales cargados en las opciones. */
+function diffBase(p){return p.options.find(o=>o.recommended)||[...p.options].sort((a,b)=>finalPrice(a)-finalPrice(b))[0];}
+function featList(o){return String(o.features||"").split("\n").map(x=>x.trim()).filter(Boolean);}
+function diffMarkup(p,o){
+  if(p.options.length<2) return "";
+  const b=diffBase(p); if(!b||b.id===o.id) return "";
+  const key=x=>String(x).toLowerCase().replace(/\s+/g," "), e=escapeHtml;
+  const delta=Math.round(finalPrice(o)-finalPrice(b)), bf=new Set(featList(b).map(key)), of=new Set(featList(o).map(key));
+  const sums=featList(o).filter(x=>!bf.has(key(x))), lacks=featList(b).filter(x=>!of.has(key(x)));
+  const w=x=>String(x.warranty||"").trim().toLowerCase();
+  if(o.hasWarranty&&w(o)&&(!b.hasWarranty||w(b)!==w(o))) sums.push("Garantía: "+o.warranty);
+  else if(b.hasWarranty&&w(b)&&!(o.hasWarranty&&w(o))) lacks.push("Garantía: "+b.warranty);
+  if(o.hasInstallments&&o.installments>1&&!(b.hasInstallments&&b.installments>=o.installments)) sums.push(`Hasta ${o.installments} cuotas`);
+  else if(b.hasInstallments&&b.installments>1&&!(o.hasInstallments&&o.installments>1)) lacks.push(`Cuotas (${b.installments})`);
+  const down=delta<0, list=down?lacks:sums; if(!list.length) return "";
+  const head=down?`Ahorrás <em>${money(-delta)}</em> frente a ${e(b.name)}. No incluye:`:delta>0?`Por <em>${money(delta)} más</em> que ${e(b.name)} sumás:`:`Mismo precio que ${e(b.name)}. Suma:`;
+  return `<div class="choice-diff ${down?"down":"up"}"><p>${head}</p><ul>${list.slice(0,3).map(x=>`<li>${e(x)}</li>`).join("")}${list.length>3?`<li class="more">y ${list.length-3} más</li>`:""}</ul></div>`;
+}
+
+/* ===== "¿Qué es lo más importante para vos?" =====
+   Reduce la parálisis de elegir: un toque elige la opción que mejor responde a esa prioridad y explica por qué. */
+function helperPicks(p){
+  const O=p.options, cheap=[...O].sort((a,b)=>finalPrice(a)-finalPrice(b))[0];
+  const score=o=>featList(o).length*10+(o.hasWarranty&&o.warranty?3:0)+(o.hasInstallments&&o.installments>1?1:0);
+  const best=[...O].sort((a,b)=>score(b)-score(a)||finalPrice(b)-finalPrice(a))[0], rec=O.find(o=>o.recommended);
+  const list=[{k:"cheap",ico:"💸",lab:"Ahorrar",o:cheap},{k:"best",ico:"🏆",lab:"Más completa",o:best}];
+  if(rec) list.splice(1,0,{k:"rec",ico:"⭐",lab:"Recomendada",o:rec});
+  const seen=new Set(); const out=list.filter(x=>x.o&&!seen.has(x.o.id)&&seen.add(x.o.id));
+  return out.length>=2?out:[];
+}
+function pickHelperMarkup(p){
+  const picks=helperPicks(p); if(!picks.length) return "";
+  return `<div class="pick-helper" data-pick-helper><span class="ph-q">¿Qué priorizás?</span><div class="ph-chips" role="group" aria-label="Elegir según tu prioridad">${picks.map(x=>`<button type="button" class="ph-chip" data-ph="${x.k}"><i class="ph-ico" aria-hidden="true">${x.ico}</i>${x.lab}</button>`).join("")}</div><p class="ph-out" id="phOut" aria-live="polite" hidden></p></div>`;
+}
+function initPickHelper(){
+  const root=$("#publicContent"), box=root&&$("[data-pick-helper]",root); if(!box) return;
+  const p=state.proposals.find(x=>x.id===currentProposalId); if(!p) return;
+  const picks=Object.fromEntries(helperPicks(p).map(x=>[x.k,x.o])), out=$("#phOut",root), biz=state.business.name||"Tu vendedor";
+  const why={
+    cheap:o=>`La más económica es <b>${escapeHtml(o.name)}</b>: ${money(finalPrice(o))}${p.depositPct>0?` y reservás con ${money(depositOf(p,o))}`:""}.`,
+    rec:o=>`${escapeHtml(biz)} te recomienda <b>${escapeHtml(o.name)}</b>${o.why?`: “${escapeHtml(o.why)}”`:"."}`,
+    best:o=>{const n=featList(o).length; return `La más completa es <b>${escapeHtml(o.name)}</b>${n?`: incluye ${n} ${n===1?"punto":"puntos"}`:""}${o.hasWarranty&&o.warranty?`${n?" y":":"} garantía de ${escapeHtml(o.warranty)}`:""}.`;}
+  };
+  box.addEventListener("click",e=>{
+    const chip=e.target.closest("[data-ph]"); if(!chip) return;
+    const o=picks[chip.dataset.ph]; if(!o) return;
+    $$("[data-ph]",box).forEach(c=>c.classList.toggle("on",c===chip));
+    const btn=root.querySelector(`.choice[data-choice="${CSS.escape(o.id)}"] [data-select-option]`);
+    if(btn) btn.click();
+    if(out){out.innerHTML=why[chip.dataset.ph](o); out.hidden=false;}
+    if(window.__ccGoTo) window.__ccGoTo(o.id);
+    const card=root.querySelector(`.choice[data-choice="${CSS.escape(o.id)}"]`);
+    if(card&&!matchMedia("(max-width:640px)").matches) card.scrollIntoView({block:"nearest",behavior:matchMedia("(prefers-reduced-motion:reduce)").matches?"auto":"smooth"});
+  });
 }
