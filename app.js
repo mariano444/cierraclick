@@ -71,7 +71,13 @@ function syncExpired(list){
 const selectedPayments=()=>$$('input[name="pay"]:checked').map(x=>x.value);
 const builderCash=()=>Math.min(50,Math.max(0,Number($("#cashDiscount").value)||0));
 const builderExpiry=()=>$("#proposalExpires").value||addDays(isoDate(Date.now()),7);
-const expiryLine=p=>p.status==="expired"?`⛔ Esta propuesta venció el ${fmtDate(p.expiresAt)}`:`⏳ ${expiryText(p)} · válida hasta el ${fmtDate(p.expiresAt)}`;
+const expiryLine=p=>{
+  if(p.status==="expired") return `⛔ Esta propuesta venció el ${fmtDate(p.expiresAt)}`;
+  const end=dayEnd(p.expiresAt), ms=end-Date.now();
+  // Con menos de 48 h se muestra la cuenta regresiva real (se actualiza sola cada segundo).
+  if(ms>0&&ms<48*36e5) return `⏳ Vence en <b data-cd="${end}">${fmtLeft(ms)}</b> · hasta el ${fmtDate(p.expiresAt)}`;
+  return `⏳ ${expiryText(p)} · válida hasta el ${fmtDate(p.expiresAt)}`;
+};
 const payBlock=p=>(p.payments||[]).length?`<p class="pay">Medios de pago: ${p.payments.map(k=>PAY[k]).join(" · ")}</p>`:"";
 function cashLine(p,o){
   const cd=Number(p.cashDiscount)||0, ks=(p.payments||[]).filter(k=>k==="cash"||k==="transfer");
@@ -158,17 +164,28 @@ const Auth={
 const Cloud={
   get on(){return Auth.remote;},
   async rpc(name,args={}){const {data,error}=await (await Auth.client()).rpc(name,args);if(error)throw error;return data;},
-  proposal(row){return {...row,lostReason:row.lost_reason,recontactAt:row.recontact_at?new Date(row.recontact_at).getTime():null,client:{name:row.clients?.name||"Cliente",phone:row.clients?.phone||""},expiresAt:row.expires_at,cashDiscount:Number(row.cash_discount||0),depositPct:Number(row.deposit_pct||0),chosenOption:row.chosen_option_id,createdAt:row.created_at,acceptedAt:row.accepted_at,lastViewedAt:row.last_viewed_at,lastFollowUpAt:row.last_follow_up_at,proofSentAt:row.proof_sent_at,depositPaidAt:row.deposit_paid_at,depositStarted:row.deposit_started||0,followUps:row.follow_ups||0,options:(row.proposal_options||[]).sort((a,b)=>a.position-b.position).map(o=>({id:o.id,name:o.name,price:Number(o.price),discountType:o.discount_type,discountValue:Number(o.discount_value),description:o.description,hasInstallments:o.has_installments,installments:o.installments,hasWarranty:o.has_warranty,warranty:o.warranty,features:o.features,terms:o.terms,recommended:o.recommended}))};},
+  proposal(row){return {...row,lostReason:row.lost_reason,recontactAt:row.recontact_at?new Date(row.recontact_at).getTime():null,client:{name:row.clients?.name||"Cliente",phone:row.clients?.phone||""},expiresAt:row.expires_at,cashDiscount:Number(row.cash_discount||0),depositPct:Number(row.deposit_pct||0),chosenOption:row.chosen_option_id,createdAt:row.created_at,acceptedAt:row.accepted_at,lastViewedAt:row.last_viewed_at,lastFollowUpAt:row.last_follow_up_at,proofSentAt:row.proof_sent_at,depositPaidAt:row.deposit_paid_at,depositStarted:row.deposit_started||0,followUps:row.follow_ups||0,bonusText:row.bonus_text||"",bonusHours:row.bonus_hours||0,slotsLeft:row.slots_left??null,slotsLabel:row.slots_label||"",acceptedName:row.accepted_name||"",termsAcceptedAt:row.terms_accepted_at||null,options:(row.proposal_options||[]).sort((a,b)=>a.position-b.position).map(o=>({id:o.id,name:o.name,price:Number(o.price),discountType:o.discount_type,discountValue:Number(o.discount_value),description:o.description,hasInstallments:o.has_installments,installments:o.installments,hasWarranty:o.has_warranty,warranty:o.warranty,features:o.features,terms:o.terms,recommended:o.recommended}))};},
   async hydrate(){
     if(!this.on||!currentUser)return;
     const sb=await Auth.client(); await this.rpc("refresh_expired").catch(()=>{});
     const [biz,props,catalog,events]=await Promise.all([sb.from("businesses").select("*").eq("owner_id",currentUser.id).single(),sb.from("proposals").select("*,clients(name,phone),proposal_options!proposal_options_proposal_id_fkey(*)").order("created_at",{ascending:false}),sb.from("catalog_items").select("*").order("updated_at",{ascending:false}),sb.from("proposal_events").select("type,message,created_at").order("created_at",{ascending:false}).limit(12)]);
     if(biz.error||props.error||catalog.error||events.error)throw biz.error||props.error||catalog.error||events.error;
     const b=biz.data;
-    state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,depositPolicy:b.deposit_policy,faq:b.faq,photo:b.photo||"",alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
+    state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,depositPolicy:b.deposit_policy,faq:b.faq,photo:b.photo||"",alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note,afterSteps:b.after_steps||""},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
     state.clients=Object.values(state.proposals.reduce((a,p)=>{const k=p.client.phone||p.client.name;a[k]||(a[k]={...p.client,proposals:0});a[k].proposals++;return a;},{}));fillSettings();renderDashboard();
   },
-  async publicProposal(id){const r=await this.rpc("get_public_proposal",{p_id:id}); if(r){try{const x=await this.rpc("get_public_extras",{p_id:id}); if(x) r.business={...(r.business||{}),...x};}catch(e){} try{const ox=await this.rpc("get_public_option_extras",{p_id:id}); if(ox&&r.options) r.options.forEach(o=>{const x=ox[o.id]; if(x){o.why=x.why;o.photo=x.photo;}}); r._ex=true;}catch(e){}} return r;}
+  async publicProposal(id){
+    const r=await this.rpc("get_public_proposal",{p_id:id}); if(!r) return r;
+    // Los datos extra se piden en paralelo (antes eran en serie) y cada uno es opcional.
+    const [x,ox,v3]=await Promise.all([
+      this.rpc("get_public_extras",{p_id:id}).catch(()=>null),
+      this.rpc("get_public_option_extras",{p_id:id}).then(v=>({v}),()=>null),
+      this.rpc("get_public_v3",{p_id:id}).catch(()=>null)]);
+    if(x) r.business={...(r.business||{}),...x};
+    if(ox){const m=ox.v; if(m&&r.options) r.options.forEach(o=>{const e=m[o.id]; if(e){o.why=e.why;o.photo=e.photo;}}); r._ex=true;}
+    if(v3){applyV3(r,v3); r.business={...(r.business||{}),afterSteps:v3.afterSteps||""};}
+    return r;
+  }
 };
 function applyUser(u){
   currentUser=u; STORAGE_KEY=`cierraclick_u_${u.id}`; state=loadState();
@@ -188,7 +205,7 @@ function setAuthTab(t){
 function fillSettings(){
   updateAvatarPreview();
   const f=$("#settingsForm"), b=state.business;
-  Object.entries({businessName:b.name,whatsapp:b.whatsapp,paymentLink:b.paymentLink,brandColor:b.brandColor,holder:b.holder,bank:b.bank,cbu:b.cbu,alias:b.alias,cuit:b.cuit,transferNote:b.transferNote,depositPolicy:b.depositPolicy,faq:b.faq})
+  Object.entries({businessName:b.name,whatsapp:b.whatsapp,paymentLink:b.paymentLink,brandColor:b.brandColor,holder:b.holder,bank:b.bank,cbu:b.cbu,alias:b.alias,cuit:b.cuit,transferNote:b.transferNote,depositPolicy:b.depositPolicy,faq:b.faq,afterSteps:b.afterSteps})
     .forEach(([k,v])=>{if(f.elements[k]) f.elements[k].value=v??"";});
 }
 async function markPaid(id){
@@ -249,6 +266,7 @@ function openModal(id){
 }
 function closeModal(id){
   if(id==="publicModal"&&typeof stopTracker==="function") stopTracker();
+  if(id==="builderModal"&&typeof cancelVoice==="function") cancelVoice();
   const modal=$("#"+id); modal.classList.remove("open"); modal.setAttribute("aria-hidden","true");
   document.body.style.overflow="";
 }
@@ -257,6 +275,7 @@ function resetBuilder(){
   builderKind="service";
   $("#proposalExpires").value=addDays(isoDate(Date.now()),7);
   builderOptions=[newOption({})];
+  cancelVoice(); builderVoice=""; renderVoiceField();
   renderOptionEditors(); renderCatalog();
   renderBuilderPreview();
 }
@@ -371,6 +390,7 @@ function collectBuilderData(){
     validity:"",expiresAt:builderExpiry(),payments:selectedPayments(),cashDiscount:builderCash(),depositPct:builderDep(),
     includes:$("#includes").value.split("\n").map(x=>x.trim()).filter(Boolean),
     conditions:$("#conditions").value.trim(),
+    ...perksFromForm(),
     options,
     status:"sent",views:0,chosenOption:null,createdAt:new Date().toISOString(),acceptedAt:null,depositStarted:0,
     lastEvent:"Propuesta creada."
@@ -423,12 +443,15 @@ function publicProposalMarkup(p, mode="full"){
       <div class="public-greeting">Hola ${escapeHtml(p.client.name)} 👋</div>
       <div class="public-title">${escapeHtml(p.title)}</div>
       ${mode==="full"?`<span class="valid">${expiryLine(p)}</span>`:""}
+      ${p.status!=="expired"?voiceMarkup(p):""}
       ${mode==="full"&&p.status!=="expired"?`<div class="steps"><span><b>1</b> ${multi?"Elegí tu opción":"Revisá la propuesta"}</span><span><b>2</b> Aceptá</span><span><b>3</b> Reservá${p.depositPct>0?" con seña":""}</span></div><ul class="trust-strip"><li>🔒 Sin cargo al aceptar</li>${p.options.some(o=>o.hasWarranty&&o.warranty)?"<li>🛡️ Garantía</li>":""}<li>💬 Por WhatsApp</li></ul>`:""}
+      ${p.status!=="expired"?perksMarkup(p):""}
       <div class="choice-grid n${p.options.length}">${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
       <div class="public-includes" data-sec="incluye">${includes}</div>
       <div data-sec="pago">${payBlock(p)}</div>
       <p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
-      ${mode==="full"&&p.status!=="expired"?`${assuranceMarkup(p)}<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div><div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
+      ${p.status!=="expired"?afterMarkup(p):""}
+      ${mode==="full"&&p.status!=="expired"?`${assuranceMarkup(p)}<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div>${acceptFormMarkup(p)}<div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
       <div class="public-actions">
         ${mode==="full"&&p.status!=="expired"?`<div class="cta-note" id="ctaNote"></div>`:""}
         ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${multi?"Quiero esta opción":"Quiero esto"}</button>`:''}
@@ -452,6 +475,7 @@ function renderBuilderPreview(){
     expiresAt:builderExpiry(),payments:selectedPayments(),cashDiscount:builderCash(),depositPct:builderDep(),
     includes:$("#includes").value.split("\n").map(x=>x.trim()).filter(Boolean),
     conditions:$("#conditions").value||"La reserva se confirma con la seña.",
+    ...perksFromForm(), createdAt:new Date().toISOString(),
     options:builderOptions.map(o=>({...o,hasWarranty:o.hasWarranty&&!!String(o.warranty).trim(),installments:Number(o.installments)||2,recommended:o.recommended&&builderOptions.length>1}))
   };
   $("#builderPreview").innerHTML=publicProposalMarkup(p,"preview");
@@ -467,7 +491,7 @@ function openBuilder(){
 async function createProposal(e){
   e.preventDefault();
   const p=collectBuilderData();
-  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
+  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined,bonusText:undefined,bonusHours:undefined,slotsLeft:undefined,slotsLabel:undefined,voice:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);await saveProposalExtras(id,p);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
   state.proposals.unshift(p);
   const existing=state.clients.find(c=>c.phone===p.client.phone);
   if(existing) existing.proposals+=1;
@@ -497,6 +521,7 @@ async function openPublic(id,preview=false,quiet=false){
   if(Cloud.on&&!preview){try{const remote=await Cloud.publicProposal(id);if(!remote)return toast("No se encontró la propuesta.");const p={...remote,createdAt:remote.createdAt||new Date().toISOString()};state.business={...state.business,...remote.business};state.proposals=[p,...state.proposals.filter(x=>x.id!==id)];await Cloud.rpc("track_proposal",{p_id:id,p_type:"view"});return openPublic(id,true,true);}catch(e){return toast(e.message||"No se pudo abrir la propuesta.");}}
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
   if(Cloud.on&&currentUser&&!p._ex){p._ex=true;try{const ox=await Cloud.rpc("get_public_option_extras",{p_id:id});(p.options||[]).forEach(o=>{const x=ox&&ox[o.id];if(x){o.why=x.why;o.photo=x.photo;}});}catch(e){}}
+  if(Cloud.on&&currentUser&&!p._v3){p._v3=true;try{const v=await Cloud.rpc("get_public_v3",{p_id:id});if(v)applyV3(p,v);}catch(e){}}
   currentProposalId=id;
   if(!preview){
   p.views=(p.views||0)+1; p.lastViewedAt=Date.now();
@@ -520,6 +545,8 @@ function attachPublicEvents(p){
     const ab=$("#acceptBtn"); if(ab) ab.textContent=`Quiero ${p.options.length>1?o.name:"esto"} · ${money(finalPrice(o))}`;
     const cn=$("#ctaNote"); if(cn) cn.textContent=p.depositPct>0?`Aceptar no te cobra nada. Después reservás con la seña de ${money(depositOf(p,o))}.`:"Aceptar no te cobra nada todavía.";
     if(sum){sum.hidden=false;sum.innerHTML=`<b>${escapeHtml(o.name)}</b> · ${money(finalPrice(o))}${p.depositPct>0?` · Seña ${money(depositOf(p,o))}`:""}${o.hasInstallments&&o.installments>1?` · ${o.installments} cuotas`:""}`;}
+    const as=$("#acceptSum"); if(as){const dep=depositOf(p,o); as.innerHTML=`Elegiste <b>${escapeHtml(o.name)}</b> por <b>${money(finalPrice(o))}</b>.${p.depositPct>0?` Seña para reservar: <b>${money(dep)}</b> · saldo ${money(finalPrice(o)-dep)}.`:""}${bonusActive(p)?` 🎁 Incluye el bonus: ${escapeHtml(p.bonusText)}.`:""}`;}
+    const at=$("#acceptTermsText"); if(at) at.textContent=[o.terms,p.conditions].filter(x=>x&&String(x).trim()).join("\n\n")||"Esta propuesta no tiene condiciones adicionales.";
     $$("[data-doubt]").forEach(a=>{a.href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Soy ${p.client.name}. Tengo una duda sobre "${p.title}" (${o.name}, ${money(finalPrice(o))}): ${a.dataset.doubt}.`)}`;});};
   upd(); if(p.options.length>1) markSelected(chosenOf(p).id);
   $("#remindBtn")?.addEventListener("click",()=>{
@@ -549,12 +576,22 @@ function attachPublicEvents(p){
       toast(`Elegiste ${chosen.name}.`);
     });
   });
+  const aform=$("#acceptForm");
   $("#acceptBtn")?.addEventListener("click",()=>{
-    p.chosenOption=chosenOf(p).id; p.status="accepted"; p.acceptedAt=new Date().toISOString();
-    p.lastEvent="Cliente aceptó la propuesta.";
-    state.activity.unshift({icon:"✅",text:`${p.client.name} aceptó la propuesta.`,time:"Ahora"});
-    saveState(); if(Cloud.on) Cloud.rpc("track_proposal",{p_id:p.id,p_type:"accept",p_option:p.chosenOption}).catch(()=>toast("No se pudo registrar la aceptación."));
-    renderAcceptedState(p);
+    if(!aform) return;
+    if(aform.hidden){aform.hidden=false; upd(); aform.scrollIntoView({block:"center",behavior:"smooth"}); setTimeout(()=>{try{$("#acceptName").focus({preventScroll:true});}catch(e){}},350); return;}
+    aform.dispatchEvent(new Event("submit",{cancelable:true}));
+  });
+  aform?.addEventListener("submit",async e=>{
+    e.preventDefault();
+    const err=$("#acceptErr"), show=m=>{err.textContent=m; err.hidden=false;};
+    const name=($("#acceptName").value||"").trim().replace(/\s+/g," ");
+    if(name.length<5||!name.includes(" ")) return show("Escribí tu nombre y apellido.");
+    if(!$("#acceptTerms").checked) return show("Tildá la casilla para aceptar las condiciones.");
+    err.hidden=true;
+    const btn=$("#acceptConfirm"); btn.disabled=true; btn.textContent="Confirmando…";
+    const ok=await acceptNow(p,chosenOf(p),name);
+    if(!ok){btn.disabled=false; btn.textContent="Confirmar mi aceptación";}
   });
 }
 function renderAcceptedStateBase(p){
@@ -567,14 +604,16 @@ function renderAcceptedStateBase(p){
       <div class="public-brand">${avatarHtml()}${escapeHtml(state.business.name).toUpperCase()}${ratingChip()}</div>
       <div class="public-greeting">¡Excelente, ${escapeHtml(p.client.name)}! ✅</div>
       <p style="color:#64748b">Tu elección quedó registrada: <strong>${escapeHtml(option.name)}</strong> · ${money(finalPrice(option))}</p>
+      ${p.acceptedName?`<p class="accepted-by">Aceptada por <b>${escapeHtml(p.acceptedName)}</b>${p.termsAcceptedAt?" · condiciones aceptadas":""}</p>`:""}${bonusWonMarkup(p)}
       ${p.depositPaidAt?`<div class="pick-summary">💰 <b>Seña recibida.</b> ¡Tu reserva está confirmada!</div>`:p.proofSentAt?`<div class="pick-summary">💸 Avisaste que transferiste. ${escapeHtml(b.name)} lo está verificando.</div>`:""}
       <div class="card" style="margin-top:16px;background:#f8fafc">
         <strong>Para reservar la operación</strong>
         <p style="color:#64748b;margin-bottom:0">${p.depositPct>0?`Seña a pagar: <b>${money(depositOf(p,option))}</b> (${p.depositPct}%) · Saldo: ${money(finalPrice(option)-depositOf(p,option))}. `:""}Aboná la seña mediante el link de pago del vendedor.</p>
       </div>
       ${p.depositPaidAt?"":transferBlock}
+      ${afterMarkup(p,true)}
       <div class="public-actions">
-        ${p.depositPaidAt?"":paymentUrl?`<a class="public-seña" href="${escapeHtml(paymentUrl)}" target="_blank" rel="noopener" id="depositLink">PAGAR SEÑA</a>`:hasTransfer?"":`<button class="public-seña" id="depositDemo">PAGAR SEÑA (DEMO)</button>`}
+        ${p.depositPaidAt?"":paymentUrl?`<a class="public-seña" href="${escapeHtml(paymentUrl)}" target="_blank" rel="noopener" id="depositLink">PAGAR SEÑA</a>`:hasTransfer||Cloud.on?"":`<button class="public-seña" id="depositDemo">PAGAR SEÑA (DEMO)</button>`}
         <button class="public-whatsapp" id="receiptBtn" type="button">📄 Descargar constancia</button>
         <a class="public-whatsapp" href="https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Acepté la propuesta y quiero avanzar con la seña.`)}" target="_blank" rel="noopener">Escribir al vendedor</a>
       </div>
@@ -659,6 +698,7 @@ function todayItems(){
     const last=Math.max(new Date(p.lastViewedAt||p.createdAt).getTime(),p.lastFollowUpAt||0), h=(now-last)/36e5;
     let reason=null, prio=9;
     if(p.status==="expired"){reason="⛔ Venció: renovala y volvé a escribirle.";prio=1;}
+    else if(bonusActive(p)&&bonusDeadline(p)-now<12*36e5){reason=`🎁 El bonus vence en ${fmtLeft(bonusDeadline(p)-now)}: avisale.`;prio=2;}
     else if(daysLeft(p)<=2){reason=`⏳ ${expiryText(p)}.`;prio=2;}
     else if(p.chosenOption&&h>=6){reason=`⭐ Eligió una opción y no aceptó (hace ${hTxt(h)}).`;prio=2;}
     else if(h>=24){reason=p.status==="viewed"?`👀 La vio y no respondió (hace ${hTxt(h)}).`:`📨 Sin abrir hace ${hTxt(h)}.`;prio=p.status==="viewed"?3:4;}
@@ -680,6 +720,7 @@ function duplicateProposal(id){
   $("#clientName").value=p.client.name; $("#clientPhone").value=p.client.phone;
   $("#proposalTitle").value=p.title; $("#includes").value=(p.includes||[]).join("\n"); $("#conditions").value=p.conditions||"";
   $("#cashDiscount").value=p.cashDiscount||0; $("#depositPct").value=p.depositPct||0;
+  $("#bonusText").value=p.bonusText||""; $("#bonusHours").value=p.bonusHours||48; $("#slotsLeft").value=p.slotsLeft??""; $("#slotsLabel").value=p.slotsLabel||"";
   $$('input[name="pay"]').forEach(x=>x.checked=(p.payments||[]).includes(x.value));
   $$('input[name="kind"]').forEach(x=>x.checked=x.value===(p.kind||"service"));
   builderKind=p.kind||"service";
@@ -690,7 +731,7 @@ function duplicateProposal(id){
 function printReceipt(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
   const o=chosenOf(p), d=discountAmount(o), fin=finalPrice(o), e=escapeHtml;
-  const rows=[["Cliente",p.client.name],["Propuesta",p.title],["Opción elegida",o.name],["Descripción",o.description],["Precio de lista",money(o.price)],d>0?["Descuento","-"+money(d)]:null,["Precio final",money(fin)],p.depositPct>0?[`Seña (${p.depositPct}%)`,money(Math.round(fin*p.depositPct/100))]:null,p.cashDiscount>0?[`Pago contado (-${p.cashDiscount}%)`,money(fin*(1-p.cashDiscount/100))]:null,o.hasInstallments?["Cuotas",`${o.installments} de ${money(fin/o.installments)}`]:null,o.hasWarranty?["Garantía",o.warranty]:null,["Medios de pago",(p.payments||[]).map(k=>PAY[k]).join(", ")||"A convenir"],["Aceptada el",new Date(p.acceptedAt||Date.now()).toLocaleString("es-AR")],["Vigencia de la propuesta",`hasta el ${fmtDate(p.expiresAt)}`],(o.terms||p.conditions)?["Términos y condiciones",[o.terms,p.conditions].filter(Boolean).join(" · ")]:null].filter(r=>r&&r[1]);
+  const rows=[["Cliente",p.client.name],p.acceptedName?["Aceptada por",p.acceptedName]:null,["Propuesta",p.title],["Opción elegida",o.name],["Descripción",o.description],["Precio de lista",money(o.price)],d>0?["Descuento","-"+money(d)]:null,["Precio final",money(fin)],p.depositPct>0?[`Seña (${p.depositPct}%)`,money(Math.round(fin*p.depositPct/100))]:null,p.cashDiscount>0?[`Pago contado (-${p.cashDiscount}%)`,money(fin*(1-p.cashDiscount/100))]:null,o.hasInstallments?["Cuotas",`${o.installments} de ${money(fin/o.installments)}`]:null,o.hasWarranty?["Garantía",o.warranty]:null,["Medios de pago",(p.payments||[]).map(k=>PAY[k]).join(", ")||"A convenir"],["Aceptada el",new Date(p.acceptedAt||Date.now()).toLocaleString("es-AR")],p.termsAcceptedAt?["Condiciones aceptadas",new Date(p.termsAcceptedAt).toLocaleString("es-AR")]:null,bonusWon(p)?["Bonus incluido (aceptó a tiempo)",p.bonusText]:null,["Vigencia de la propuesta",`hasta el ${fmtDate(p.expiresAt)}`],(o.terms||p.conditions)?["Términos y condiciones",[o.terms,p.conditions].filter(Boolean).join(" · ")]:null].filter(r=>r&&r[1]);
   const w=window.open("","_blank"); if(!w) return toast("Habilitá las ventanas emergentes para generar la constancia.");
   w.document.write(`<!doctype html><meta charset="utf-8"><title>Constancia - ${e(p.client.name)}</title><style>body{font:14px system-ui,sans-serif;max-width:680px;margin:30px auto;padding:0 20px;color:#0b1220}h1{font-size:22px;margin:4px 0 2px}small{color:#64748b}table{width:100%;border-collapse:collapse;margin-top:18px}td{padding:9px 6px;border-bottom:1px solid #e2e8f0;vertical-align:top}td:first-child{color:#64748b;width:38%}.f{margin-top:22px;font-size:11px;color:#94a3b8}</style><small>${e(state.business.name).toUpperCase()}</small><h1>Constancia de aceptación</h1><small>Código: ${e(p.id)}</small><table>${rows.map(r=>`<tr><td>${e(r[0])}</td><td>${e(String(r[1]))}</td></tr>`).join("")}</table><p class="f">Documento generado con CierraClick que deja constancia de la opción aceptada. No reemplaza una factura.</p><script>onload=()=>print()<\/script>`);
   w.document.close();
@@ -700,7 +741,7 @@ function shareLink(p){return `${location.origin}${location.pathname.replace(/ind
 function shareText(p){
   const first=p.client.name.split(" ")[0], d=daysLeft(p), multi=p.options.length>1;
   const when=d<=0?"Vence hoy":d===1?"Vence mañana":`Vigente hasta el ${fmtDate(p.expiresAt)}`;
-  return `Hola ${first} 👋 Te armé tu propuesta de ${state.business.name}: ${multi?"elegí la opción que más te sirva":"revisá el detalle"}${p.depositPct>0?` y reservá con una seña del ${p.depositPct}%`:""}. ${when}. 👇\n${shareLink(p)}`;
+  return `Hola ${first} 👋 Te armé tu propuesta de ${state.business.name}: ${multi?"elegí la opción que más te sirva":"revisá el detalle"}${p.depositPct>0?` y reservá con una seña del ${p.depositPct}%`:""}. ${when}.${perksText(p)} 👇\n${shareLink(p)}`;
 }
 // Seguimiento por WhatsApp con un toque (propuestas enviadas o vistas sin aceptar)
 function leadScore(p){
@@ -716,16 +757,16 @@ function leadScore(p){
 }
 function followMsg(p){
   const first=p.client.name.split(" ")[0], link=shareLink(p), o=chosenOf(p), tot=money(finalPrice(o));
-  const dep=p.depositPct>0?money(depositOf(p,o)):tot, vig=fmtDate(p.expiresAt);
+  const dep=p.depositPct>0?money(depositOf(p,o)):tot, vig=fmtDate(p.expiresAt), bn=bonusActive(p)?` 🎁 Si avanzás antes del ${fmtDateTime(bonusDeadline(p))}: ${p.bonusText}.`:"";
   if(p.status==="lost") return `Hola ${first} 👋 Hace unos días hablamos de "${p.title}". ¿Retomamos? Si algo cambió, te lo ajusto.`;
   if(p.status==="accepted") return `Hola ${first} 👋 ¡Gracias por aceptar! Para dejarte reservado queda la seña de ${dep}. Si ya la hiciste, mandame el comprobante y lo confirmo: ${link}`;
   if(p.status==="expired") return `Hola ${first} 👋 Tu propuesta venció el ${vig}. Si querés, te la actualizo hoy y retomamos: ${link}`;
   if((p.followUps||0)>=3) return `Hola ${first}, no quiero molestarte 🙂 Dejo la propuesta disponible hasta el ${vig} por si querés retomarla más adelante: ${link}`;
-  if(p.chosenOption) return `Hola ${first} 👋 Vi que elegiste ${o.name} (${tot}).${p.depositPct>0?` La seña es ${dep}.`:""} ¿Avanzamos y te lo dejo reservado? ${link}`;
-  if(daysLeft(p)<=2) return `Hola ${first} 👋 Aviso rápido: ${expiryText(p).toLowerCase()}. ¿Avanzamos para que no pierdas el precio? ${link}`;
-  if((p.views||0)>=3) return `Hola ${first} 👋 Vi que estuviste mirando la propuesta. ¿Querés que te ayude a elegir la opción que mejor te cierre? ${link}`;
-  if(p.status==="viewed") return `Hola ${first} 👋 Vi que ya revisaste la propuesta. ¿Te quedó alguna duda? Si querés avanzar, te reservo con la seña. Vigente hasta el ${vig}: ${link}`;
-  return `Hola ${first} 👋 ¿Pudiste ver la propuesta que te mandé? Vigente hasta el ${vig}: ${link}`;
+  if(p.chosenOption) return `Hola ${first} 👋 Vi que elegiste ${o.name} (${tot}).${p.depositPct>0?` La seña es ${dep}.`:""} ¿Avanzamos y te lo dejo reservado?${bn} ${link}`;
+  if(daysLeft(p)<=2) return `Hola ${first} 👋 Aviso rápido: ${expiryText(p).toLowerCase()}. ¿Avanzamos para que no pierdas el precio?${bn} ${link}`;
+  if((p.views||0)>=3) return `Hola ${first} 👋 Vi que estuviste mirando la propuesta. ¿Querés que te ayude a elegir la opción que mejor te cierre?${bn} ${link}`;
+  if(p.status==="viewed") return `Hola ${first} 👋 Vi que ya revisaste la propuesta. ¿Te quedó alguna duda? Si querés avanzar, te reservo con la seña.${bn} Vigente hasta el ${vig}: ${link}`;
+  return `Hola ${first} 👋 ¿Pudiste ver la propuesta que te mandé?${bn} Vigente hasta el ${vig}: ${link}`;
 }
 async function followUp(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
@@ -756,7 +797,9 @@ function startTracker(p){
   }
   on(root,"click",e=>{const el=e.target.closest("button,a,summary,[data-choice]"); if(!el) return; let key;
     if(el.dataset.selectOption) key="Elige "+optName(el.dataset.selectOption);
-    else if(el.id==="acceptBtn") key="Acepta la propuesta";
+    else if(el.id==="acceptBtn") key="Toca el botón de aceptar";
+    else if(el.id==="acceptConfirm") key="Toca «Confirmar mi aceptación»";
+    else if(el.tagName==="SUMMARY"&&el.closest(".terms-box")) key="Abre las condiciones antes de aceptar";
     else if(el.id==="publicWhatsapp") key="Toca WhatsApp";
     else if(el.id==="doubtBtn") key="Abre «Tengo una duda»";
     else if(el.dataset.doubt) key="Duda: "+el.dataset.doubt;
@@ -766,6 +809,7 @@ function startTracker(p){
     else {const tx=(el.textContent||el.getAttribute("aria-label")||"").trim().replace(/\s+/g," ").slice(0,40); if(!tx) return; key="Toca: "+tx;}
     T.buf.push({k:"tap",key,ms:0,t:Date.now()});
   },true);
+  on(root,"play",e=>{if(e.target&&e.target.tagName==="AUDIO") T.buf.push({k:"tap",key:"Escucha el mensaje de voz",ms:0,t:Date.now()});},true);
   const add=(k,ms)=>{T.ms[k]=(T.ms[k]||0)+ms;};
   const tick=setInterval(()=>{ if(document.visibilityState==="visible"&&Date.now()-T.act<30000){add("total",1000);T.vis.forEach(k=>add(k,1000));} },1000);
   const fl=setInterval(()=>flushTracker(),10000);
@@ -810,6 +854,8 @@ function engInsights(p,S){
     if(p.chosenOption&&p.chosenOption!==top[0][0]) out.push(`🤔 Miró más ${nm(top[0][0])} pero eligió ${nm(p.chosenOption)}: puede estar comparando precios.`);}
   if((S.secs.pago||0)>=8000) out.push("💳 Leyó la forma de pago: ofrecele reservar con la seña.");
   if((S.secs.condiciones||0)>=8000||S.taps.some(t=>t.key.startsWith("Abre términos"))) out.push("📄 Revisó las condiciones: aclarale cualquier duda sobre eso.");
+  if(S.taps.some(t=>t.key==="Escucha el mensaje de voz")) out.push("🎧 Escuchó tu mensaje de voz: buen momento para escribirle.");
+  if((S.secs.despues||0)>=6000) out.push("🧭 Leyó «qué pasa después de reservar»: ya se imagina el siguiente paso.");
   const qs=[...new Set(S.taps.filter(t=>t.key.startsWith("Abre pregunta")).map(t=>t.key.slice(16)))]; if(qs.length) out.push("❓ Abrió estas preguntas: "+qs.slice(0,3).join(" · ")+".");
   if(S.sessions>=2) out.push(`🔁 Volvió ${S.sessions} veces: lo está evaluando en serio.`);
   if(S.total&&S.total<15000&&S.scroll<50) out.push("⚠️ Se fue rápido y no llegó al final: quizás no vio las opciones.");
@@ -818,7 +864,7 @@ function engInsights(p,S){
 }
 function engHtml(p,S){
   if(!S.total&&!S.taps.length&&!S.sessions) return '<p class="tool-sub">Todavía no hay datos de atención. Se registran cuando el cliente abre el link.</p>';
-  const SEC={incluye:"Qué incluye",pago:"Forma de pago",condiciones:"Condiciones",garantias:"Garantías y preguntas"};
+  const SEC={incluye:"Qué incluye",pago:"Forma de pago",condiciones:"Condiciones",garantias:"Garantías y preguntas",despues:"Qué pasa después",mensaje:"Mensaje de voz",bonus:"Bonus y cupos",aceptar:"Confirmación"};
   const bars=(obj,lab)=>{const e=Object.entries(obj).filter(x=>x[1]>=1000).sort((a,b)=>b[1]-a[1]); const mx=e[0]?e[0][1]:1;
     return e.map(([k,ms])=>`<div class="eng-row"><span>${escapeHtml(lab(k))}</span><i style="width:${Math.max(4,Math.round(ms/mx*100))}%"></i><em>${fmtDur(ms)}</em></div>`).join("")||'<p class="tool-sub">Sin datos suficientes.</p>';};
   const ins=engInsights(p,S);
@@ -1059,7 +1105,7 @@ function openHistory(id){
   if(p.shared) ev.push({t:lv+3,i:"👥",x:`Compartió la propuesta con otra persona (${p.shared})`});
   if(p.remindAt) ev.push({t:lv+4,i:"⏰",x:"Pidió que lo contactes mañana"});
   if(p.followUps) ev.push({t:p.lastFollowUpAt||0,i:"🔔",x:`${p.followUps} seguimiento${p.followUps>1?"s":""} enviado${p.followUps>1?"s":""}`});
-  if(p.acceptedAt) ev.push({t:t(p.acceptedAt),i:"✅",x:"Aceptó la propuesta"});
+  if(p.acceptedAt) ev.push({t:t(p.acceptedAt),i:"✅",x:`Aceptó la propuesta${p.acceptedName?` como ${p.acceptedName}`:""}${bonusWon(p)?" · a tiempo para el bonus 🎁":""}`});
   if(p.proofSentAt) ev.push({t:t(p.proofSentAt),i:"💸",x:"Avisó que transfirió"});
   if(p.depositPaidAt) ev.push({t:t(p.depositPaidAt),i:"💰",x:"Seña cobrada"});
   if(p.status==="lost") ev.push({t:Date.now(),i:"📉",x:`Perdida: ${p.lostReason||"sin motivo"}${p.recontactAt?` · retomar ${relativeTime(new Date(p.recontactAt).toISOString())}`:""}`});
@@ -1210,8 +1256,8 @@ function bind(){
     const g=k=>String(fd.get(k)||"").trim(), cbu=g("cbu").replace(/\s/g,""), alias=g("alias");
     if(cbu&&!/^\d{22}$/.test(cbu)) return toast("El CBU/CVU debe tener 22 números.");
     if(alias&&!/^[A-Za-z0-9.\-]{6,20}$/.test(alias)) return toast("El alias debe tener 6 a 20 letras, números, puntos o guiones.");
-    state.business={...state.business,name:g("businessName"),whatsapp:g("whatsapp"),paymentLink:g("paymentLink"),brandColor:g("brandColor"),holder:g("holder"),bank:g("bank"),cbu,alias,cuit:g("cuit"),transferNote:g("transferNote"),depositPolicy:g("depositPolicy"),faq:g("faq")};
-    if(Cloud.on){try{const sb=await Auth.client();const {error}=await sb.from("businesses").update({name:state.business.name,whatsapp:state.business.whatsapp,payment_link:state.business.paymentLink,deposit_policy:state.business.depositPolicy||"",photo:state.business.photo||"",faq:state.business.faq||"",brand_color:state.business.brandColor,holder:state.business.holder,bank:state.business.bank,cbu,alias,cuit:state.business.cuit,transfer_note:state.business.transferNote}).eq("owner_id",currentUser.id);if(error)throw error;}catch(ex){return toast(ex.message||"No se pudo guardar la configuración.");}}
+    state.business={...state.business,name:g("businessName"),whatsapp:g("whatsapp"),paymentLink:g("paymentLink"),brandColor:g("brandColor"),holder:g("holder"),bank:g("bank"),cbu,alias,cuit:g("cuit"),transferNote:g("transferNote"),depositPolicy:g("depositPolicy"),faq:g("faq"),afterSteps:g("afterSteps")};
+    if(Cloud.on){try{const sb=await Auth.client();const {error}=await sb.from("businesses").update({name:state.business.name,whatsapp:state.business.whatsapp,payment_link:state.business.paymentLink,deposit_policy:state.business.depositPolicy||"",photo:state.business.photo||"",faq:state.business.faq||"",brand_color:state.business.brandColor,holder:state.business.holder,bank:state.business.bank,cbu,alias,cuit:state.business.cuit,transfer_note:state.business.transferNote}).eq("owner_id",currentUser.id);if(error)throw error;{const r2=await sb.from("businesses").update({after_steps:state.business.afterSteps||""}).eq("owner_id",currentUser.id);if(r2.error)toast("Guardé el resto, pero «Qué pasa después» necesita ejecutar supabase_v3.sql en Supabase.");}}catch(ex){return toast(ex.message||"No se pudo guardar la configuración.");}}
     saveState(); toast("Configuración guardada.");
   });
 
@@ -1227,10 +1273,201 @@ function bind(){
   initRoi();
   initQuick();
   initReviewAsk();
+  initPerks();
 
   if("serviceWorker" in navigator){
     window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}),{once:true});
   }
+}
+
+
+/* ===== v23: bonus, cupos, mensaje de voz, "qué pasa después" y aceptación con nombre ===== */
+const VOICE_MAX=30;
+const OK_AUDIO=/^data:audio\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/;
+function safeAudio(u){return typeof u==="string"&&u.length<=400000&&OK_AUDIO.test(u)?u:"";}
+let builderVoice="", _voiceRec=null;
+
+function fmtLeft(ms){
+  const s=Math.max(0,Math.floor(ms/1000)), h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60;
+  return h>0?`${h} h ${String(m).padStart(2,"0")} min`:`${m} min ${String(x).padStart(2,"0")} s`;
+}
+function fmtDateTime(ms){return new Date(ms).toLocaleString("es-AR",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"})+" h";}
+function bonusDeadline(p){
+  if(!p||!String(p.bonusText||"").trim()) return 0;
+  if(p.bonusDeadlineMs) return p.bonusDeadlineMs;
+  const h=Number(p.bonusHours)||0, c=new Date(p.createdAt||0).getTime();
+  return h>0&&c?c+h*36e5:0;
+}
+function bonusActive(p){const d=bonusDeadline(p);return !!(d&&Date.now()<d&&!["expired","lost","accepted"].includes(p.status));}
+function bonusWon(p){const d=bonusDeadline(p), a=p&&p.acceptedAt?new Date(p.acceptedAt).getTime():0;return !!(d&&a&&a<=d);}
+function bonusWonMarkup(p){
+  return bonusWon(p)?`<div class="bonus-box won"><b>🎁 Bonus incluido</b><p>${escapeHtml(p.bonusText)}</p><small>Aceptaste a tiempo: queda incluido en tu reserva.</small></div>`:"";
+}
+function applyV3(p,x){
+  if(!x) return p;
+  if(x.createdAt) p.createdAt=x.createdAt;
+  if(x.acceptedAt) p.acceptedAt=x.acceptedAt;
+  p.acceptedName=x.acceptedName||"";
+  p.bonusText=x.bonusText||"";
+  p.bonusDeadlineMs=x.bonusDeadline?new Date(x.bonusDeadline).getTime():0;
+  p.slotsLeft=x.slotsLeft??null; p.slotsLabel=x.slotsLabel||"";
+  p.voice=safeAudio(x.voice);
+  return p;
+}
+function perksFromForm(){
+  const t=($("#bonusText")?.value||"").trim().slice(0,140);
+  const h=Math.min(168,Math.max(1,parseInt($("#bonusHours")?.value,10)||48));
+  const sv=$("#slotsLeft")?.value, sl=(sv===""||sv==null)?null:Math.min(999,Math.max(0,parseInt(sv,10)||0));
+  return {bonusText:t,bonusHours:t?h:0,slotsLeft:sl,slotsLabel:sl==null?"":($("#slotsLabel")?.value||"").trim().slice(0,60),voice:builderVoice||""};
+}
+function perksMarkup(p){
+  const out=[], d=bonusDeadline(p), n=p.slotsLeft;
+  if(bonusActive(p)) out.push(`<div class="bonus-box"><b>🎁 Bonus por reservar a tiempo</b><p>${escapeHtml(p.bonusText)}</p><small>Si aceptás antes del ${escapeHtml(fmtDateTime(d))} · te quedan <b data-cd="${d}">${fmtLeft(d-Date.now())}</b></small></div>`);
+  if(n!=null&&n>0) out.push(`<span class="slots-chip">📅 ${n===1?"Queda":"Quedan"} <b>${n}</b> ${escapeHtml(p.slotsLabel||"cupos")}</span>`);
+  return out.length?`<div class="perks" data-sec="bonus">${out.join("")}</div>`:"";
+}
+function perksText(p){
+  let t=""; const n=p.slotsLeft;
+  if(bonusActive(p)) t+=` 🎁 Bonus por reservar antes del ${fmtDateTime(bonusDeadline(p))}: ${p.bonusText}.`;
+  if(n!=null&&n>0) t+=` 📅 ${n===1?"Queda":"Quedan"} ${n} ${p.slotsLabel||"cupos"}.`;
+  return t;
+}
+function voiceMarkup(p){
+  const v=safeAudio(p.voice); if(!v) return "";
+  return `<div class="voice-box" data-sec="mensaje">${avatarHtml()}<div><b>Un mensaje de ${escapeHtml(state.business.name)} para vos</b><audio controls preload="metadata" src="${v}"></audio><small>Audio corto, menos de 30 segundos</small></div></div>`;
+}
+const DEFAULT_AFTER=[
+  {t:"Reservás",d:"Confirmás tu lugar con la seña y te mostramos cómo pagarla.",w:""},
+  {t:"Coordinamos",d:"Te escribimos por WhatsApp para acordar los detalles.",w:""},
+  {t:"Lo recibís",d:"Concretamos la entrega o el turno que acordamos.",w:""}];
+function afterSteps(){
+  const raw=String((state.business&&state.business.afterSteps)||"").split("\n").map(l=>l.split("|").map(x=>x.trim())).filter(a=>a[0]).slice(0,5)
+    .map(a=>({t:a[0].slice(0,80),d:(a[1]||"").slice(0,160),w:(a[2]||"").slice(0,40)}));
+  return raw.length?raw:DEFAULT_AFTER;
+}
+function afterMarkup(p,compact){
+  const e=escapeHtml;
+  return `<div class="after-box${compact?" compact":""}" data-sec="despues"><h4>${compact?"Qué sigue ahora":"Qué pasa después de reservar"}</h4><ol>${afterSteps().map((s,i)=>`<li><b>${i+1}</b><div><strong>${e(s.t)}</strong>${s.d?`<p>${e(s.d)}</p>`:""}${s.w?`<span class="after-when">⏱ ${e(s.w)}</span>`:""}</div></li>`).join("")}</ol></div>`;
+}
+function acceptFormMarkup(p){
+  return `<form class="accept-form" id="acceptForm" hidden novalidate data-sec="aceptar">
+    <h4>Último paso: confirmá tu aceptación</h4>
+    <p class="accept-sum" id="acceptSum"></p>
+    <label class="accept-name">Nombre y apellido<input id="acceptName" autocomplete="name" maxlength="120" value="${escapeHtml(p.client.name)}"></label>
+    <details class="terms-box"><summary>Leer las condiciones</summary><p id="acceptTermsText"></p></details>
+    <label class="accept-chk"><input type="checkbox" id="acceptTerms"><span>Leí y acepto las condiciones de esta propuesta.</span></label>
+    <p class="voice-status" id="acceptErr" role="alert" hidden></p>
+    <button type="submit" class="public-seña" id="acceptConfirm">Confirmar mi aceptación</button>
+    <p class="accept-note">${p.depositPct>0?"Aceptar no te cobra nada. Después reservás con la seña.":"Aceptar no te cobra nada todavía."}</p>
+  </form>`;
+}
+// Confirma primero en el servidor y recién después muestra la aceptación (sin "aceptación optimista").
+async function acceptNow(p,o,name){
+  const when=new Date().toISOString();
+  if(Cloud.on){
+    try{
+      try{await Cloud.rpc("accept_with_name",{p_id:p.id,p_name:name,p_terms:true,p_option:o.id});}
+      catch(e){
+        if(e&&(e.code==="PGRST202"||/could not find the function/i.test(e.message||""))) await Cloud.rpc("track_proposal",{p_id:p.id,p_type:"accept",p_option:o.id});
+        else throw e;
+      }
+    }catch(e){toast((e&&e.message)||"No se pudo registrar la aceptación. Probá de nuevo.");return false;}
+    try{const remote=await Cloud.publicProposal(p.id); if(remote){state.business={...state.business,...remote.business}; Object.assign(p,remote,{createdAt:remote.createdAt||p.createdAt});}}catch(e){}
+  }
+  p.status="accepted"; p.chosenOption=p.chosenOption||o.id; p.acceptedAt=p.acceptedAt||when;
+  p.acceptedName=p.acceptedName||name; p.termsAcceptedAt=p.termsAcceptedAt||when;
+  p.lastEvent=`Cliente aceptó la propuesta (${name}).`;
+  state.activity.unshift({icon:"✅",text:`${name} aceptó la propuesta.`,time:"Ahora"});
+  saveState(); renderAcceptedState(p); return true;
+}
+async function saveProposalExtras(id,p){
+  if(!(p.bonusText||p.slotsLeft!=null||p.voice)) return;
+  try{await Cloud.rpc("set_proposal_extras",{p_id:id,p:{bonusText:p.bonusText||"",bonusHours:p.bonusHours||0,slotsLeft:p.slotsLeft==null?"":String(p.slotsLeft),slotsLabel:p.slotsLabel||"",voice:safeAudio(p.voice)}});}
+  catch(e){toast("La propuesta se creó, pero bonus, cupos o audio necesitan ejecutar supabase_v3.sql en Supabase.");}
+}
+// ---- Audio del vendedor (grabado o subido) ----
+function blobToAudioUrl(blob){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>{
+      const m=String(r.result).match(/^data:([^;,]*)[^,]*;base64,([\s\S]*)$/);
+      const type=((m&&m[1])||blob.type||"").toLowerCase().split(";")[0];
+      if(!m||!type.startsWith("audio/")) return rej(new Error("Ese archivo no es un audio válido."));
+      const url=`data:${type};base64,${m[2]}`;
+      safeAudio(url)?res(url):rej(new Error("El audio pesa demasiado. Probá con uno más corto."));
+    };
+    r.onerror=()=>rej(new Error("No se pudo leer el audio."));
+    r.readAsDataURL(blob);
+  });
+}
+async function fileToVoice(file){
+  if(!file.type.startsWith("audio/")) throw new Error("Elegí un archivo de audio.");
+  if(file.size>1.5*1024*1024) throw new Error("El audio pesa demasiado. Probá con uno de 30 segundos o menos.");
+  const dur=await new Promise(res=>{
+    const a=new Audio(), u=URL.createObjectURL(file), done=v=>{URL.revokeObjectURL(u);res(v);};
+    a.preload="metadata"; a.onloadedmetadata=()=>done(a.duration); a.onerror=()=>done(NaN); setTimeout(()=>done(NaN),4000); a.src=u;
+  });
+  if(isFinite(dur)&&dur>VOICE_MAX+.5) throw new Error("El audio dura más de 30 segundos.");
+  return blobToAudioUrl(file);
+}
+function renderVoiceField(msg){
+  const el=$("#voiceField"); if(!el) return;
+  const rec=!!_voiceRec, canRec=!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);
+  el.innerHTML=`${builderVoice&&!rec?`<audio controls src="${builderVoice}"></audio>`:""}
+    <div class="voice-actions">
+      ${canRec?(rec?`<button type="button" class="btn btn-secondary btn-sm" data-voice="stop">⏹ Detener (<span id="voiceSecs">0</span> s)</button>`:`<button type="button" class="btn btn-secondary btn-sm" data-voice="rec">🎙 ${builderVoice?"Grabar de nuevo":"Grabar mensaje"}</button>`):""}
+      ${rec?"":`<label class="btn btn-secondary btn-sm voice-up">📎 Subir audio<input type="file" accept="audio/*" data-voice="file" hidden></label>`}
+      ${builderVoice&&!rec?`<button type="button" class="text-btn" data-voice="del">Quitar</button>`:""}
+    </div>
+    <p class="voice-status"${msg?"":" hidden"}>${escapeHtml(msg||"")}</p>`;
+}
+async function startVoice(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const mime=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t));
+    const rec=new MediaRecorder(stream,{...(mime?{mimeType:mime}:{}),audioBitsPerSecond:24000});
+    const st={rec,stream,chunks:[],t0:Date.now(),timer:null,cancelled:false};
+    rec.ondataavailable=e=>{if(e.data&&e.data.size) st.chunks.push(e.data);};
+    rec.onstop=async()=>{
+      clearInterval(st.timer); stream.getTracks().forEach(t=>t.stop()); if(_voiceRec===st) _voiceRec=null;
+      if(st.cancelled) return;
+      try{const url=await blobToAudioUrl(new Blob(st.chunks,{type:rec.mimeType||mime||"audio/webm"})); builderVoice=url; renderVoiceField(); renderBuilderPreview();}
+      catch(e){renderVoiceField(e.message||"No se pudo guardar el audio.");}
+    };
+    _voiceRec=st; rec.start();
+    st.timer=setInterval(()=>{const sec=Math.floor((Date.now()-st.t0)/1000), el=$("#voiceSecs"); if(el) el.textContent=sec; if(sec>=VOICE_MAX) stopVoice();},250);
+    renderVoiceField();
+  }catch(e){renderVoiceField("No pude acceder al micrófono. Podés subir un audio ya grabado.");}
+}
+function stopVoice(){if(_voiceRec&&_voiceRec.rec.state!=="inactive") _voiceRec.rec.stop();}
+function cancelVoice(){
+  const st=_voiceRec; if(!st) return;
+  st.cancelled=true; clearInterval(st.timer);
+  try{if(st.rec.state!=="inactive") st.rec.stop();}catch(e){}
+  st.stream.getTracks().forEach(t=>t.stop()); _voiceRec=null;
+}
+function tickCountdowns(){
+  document.querySelectorAll("[data-cd]").forEach(el=>{
+    const left=Number(el.dataset.cd)-Date.now();
+    if(left<=0){const box=el.closest(".bonus-box"); if(box) box.remove(); else el.textContent="0 min 00 s"; return;}
+    el.textContent=fmtLeft(left);
+  });
+}
+function initPerks(){
+  setInterval(tickCountdowns,1000);
+  const vf=$("#voiceField"); if(!vf) return;
+  vf.addEventListener("click",e=>{
+    const b=e.target.closest("button[data-voice]"); if(!b) return;
+    if(b.dataset.voice==="rec") startVoice();
+    else if(b.dataset.voice==="stop") stopVoice();
+    else if(b.dataset.voice==="del"){builderVoice="";renderVoiceField();renderBuilderPreview();}
+  });
+  vf.addEventListener("change",async e=>{
+    const f=e.target.files&&e.target.files[0]; if(!f||e.target.dataset.voice!=="file") return;
+    try{builderVoice=await fileToVoice(f); renderVoiceField(); renderBuilderPreview();}
+    catch(err){renderVoiceField(err.message||"No se pudo leer el audio.");}
+  });
+  renderVoiceField();
 }
 
 document.addEventListener("DOMContentLoaded",bind);
