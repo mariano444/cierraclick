@@ -1,6 +1,6 @@
 // Metadatos para compartir (WhatsApp, Facebook, X, etc.). Lógica pura: sin dependencias de Cloudflare.
 export const SITE = "CierraClick";
-export const PLACEHOLDER = "https://TU-DOMINIO.com";
+export const PLACEHOLDER = "https://cierraclick.netlify.app";
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DIAS = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
@@ -84,3 +84,10 @@ export function applyMeta(html, block, origin) {
   return html.replace(/<!--OG:start-->[\s\S]*?<!--OG:end-->/, () => `<!--OG:start-->\n    ${block}\n    <!--OG:end-->`)
     .split(PLACEHOLDER).join(origin);
 }
+
+export const reviewMeta = (d, origin, id) => {
+  const first = ((d && d.client) || "").trim(), biz = (d && d.business && d.business.name) || SITE, ok = d && d.status === "valid";
+  return metaBlock({ title: cut(ok ? `${first ? first + ", " : ""}¿cómo te fue con ${biz}?` : `Opinión · ${biz}`, 70),
+    desc: ok ? "Dejá tu opinión en 1 minuto: ayudás a otras personas a decidir." : "Este link ya no está disponible.",
+    url: `${origin}/?r=${id}`, image: origin + "/og-propuesta.png", alt: "Dejá tu opinión", noindex: true });
+};
