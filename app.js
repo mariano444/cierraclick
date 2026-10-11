@@ -607,10 +607,10 @@ function renderDashboard(){
   $("#metricConversion").textContent=proposals.length?`${Math.round(accepted/proposals.length*100)}%`:"0%";
 
   const wk=Date.now()-7*DAY, won=proposals.filter(p=>p.status==="accepted"&&new Date(p.acceptedAt)>wk);
-  $("#weekCard").innerHTML=proposals.length?`<b>Últimos 7 días</b><div class="week-row"><span><strong>${proposals.filter(p=>new Date(p.createdAt)>wk).length}</strong> enviadas</span><span><strong>${won.length}</strong> aceptadas</span><span><strong>${money(won.reduce((s,p)=>s+finalPrice(chosenOf(p)),0))}</strong> cerrado</span></div>`:"";
+  $("#weekCard").innerHTML=proposals.length?`<b>Últimos 7 días</b><div class="week-row"><span><strong>${proposals.filter(p=>new Date(p.createdAt)>wk).length}</strong> enviadas</span><span><strong>${won.length}</strong> aceptadas</span><span><strong>${money(won.reduce((s,p)=>s+finalPrice(chosenOf(p)),0))}</strong> cerrado</span><span><strong>${money(recoveredOf(proposals,+wk).amount)}</strong> tras seguimiento</span></div>`:"";
   const open=proposals.filter(p=>p.status==="sent"||p.status==="viewed");
   const pending=open.reduce((s,p)=>s+finalPrice(chosenOf(p)),0);
-  $("#pendingBanner").innerHTML=open.length?`💰 <b>${money(pending)}</b> esperando respuesta en ${open.length} propuesta${open.length>1?"s":""}. Tocá <b>🔔 Seguimiento</b> para recuperarlas por WhatsApp.`:"";
+  $("#pendingBanner").innerHTML=open.length?`💰 <b>${money(pending)}</b> esperando respuesta en ${open.length} propuesta${open.length>1?"s":""}. Pronóstico estimado: <b>${money(salesMetrics(proposals).forecast)}</b>. Tocá <b>🔔 Seguimiento</b> para recuperarlas por WhatsApp.`:"";
   const paidBtn=p=>(p.status==="accepted"&&!p.depositPaidAt)?`<button class="text-btn" data-paid="${p.id}">✔ Seña recibida</button>`:"";
   const followBtn=p=>p.status==="lost"?`<button class="text-btn" data-follow="${p.id}">💬 Retomar</button>`:(p.status==="accepted"&&!p.depositPaidAt&&p.depositPct>0)?`<button class="text-btn" data-follow="${p.id}">💸 Pedir seña</button>`:(p.status==="sent"||p.status==="viewed")?`<button class="text-btn" data-follow="${p.id}">${(p.followUps||0)>=3?"✉️ Cierre amable":"🔔 Seguimiento"}</button>`:"";
   const lostBtn=p=>["sent","viewed","expired"].includes(p.status)?`<button class="text-btn" data-lost="${p.id}">✖ Perdida</button>`:"";
@@ -871,6 +871,22 @@ function initQuick(){
   $("#quickBtn").addEventListener("click",quickOptions);
   $("#quickPrice").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();quickOptions();}});
 }
+/* ===== Dinero recuperado y pronóstico ===== */
+const lastFollowOf=p=>p.lastFollowUpAt||(p.last_follow_up_at?new Date(p.last_follow_up_at).getTime():0);
+function recoveredOf(ps,since=0){
+  // Cierres de clientes que aceptaron DESPUÉS de que el vendedor les escribió (no prueba que fue por eso).
+  const hit=ps.filter(p=>{const a=p.acceptedAt?new Date(p.acceptedAt).getTime():0; return a&&(p.followUps||0)>0&&lastFollowOf(p)&&a>=lastFollowOf(p)&&a>=since;});
+  return {n:hit.length,amount:hit.reduce((x,p)=>x+finalPrice(chosenOf(p)),0)};
+}
+function salesMetrics(ps){
+  const price=p=>finalPrice(chosenOf(p)), openP=ps.filter(p=>["sent","viewed"].includes(p.status)&&daysLeft(p)>=0);
+  const acc=ps.filter(p=>p.status==="accepted"||p.acceptedAt).length, lost=ps.filter(p=>p.status==="lost").length, exp=ps.filter(p=>p.status==="expired").length;
+  const closed=acc+lost+exp, real=closed>=5, rate=real?acc/closed:.25;
+  // Probabilidad = tu tasa de cierre ajustada por el interés de cada propuesta (0,5x a 2x), con tope.
+  const prob=p=>Math.min(.9,Math.max(.02,rate*(.5+leadScore(p)/100*1.5)));
+  return {rate,real,closed,nOpen:openP.length,open:openP.reduce((x,p)=>x+price(p),0),
+    forecast:Math.round(openP.reduce((x,p)=>x+price(p)*prob(p),0)),hot:openP.filter(p=>leadScore(p)>=60).reduce((x,p)=>x+price(p),0)};
+}
 /* Perdida con motivo y recontacto */
 const LOST_REASONS=["Precio","Eligió a otro","No responde","Postergó","Otro"];
 function openTool(html){$("#toolContent").innerHTML=html;openModal("toolModal");}
@@ -920,8 +936,12 @@ function renderPerfExtras(){
   const risk=ps.filter(p=>["sent","viewed"].includes(p.status)&&daysLeft(p)<=2).reduce((x,p)=>x+finalPrice(chosenOf(p)),0);
   const noDep=ps.filter(p=>p.status==="accepted"&&!p.depositPaidAt&&p.depositPct>0).reduce((x,p)=>x+depositOf(p,chosenOf(p)),0);
   const att=ps.map(p=>engOf(p).total).filter(x=>x>0), avgAtt=att.length?att.reduce((x,y)=>x+y,0)/att.length:0;
+  const rec=recoveredOf(ps), sm=salesMetrics(ps);
   const doubts=ps.reduce((x,p)=>x+(p.doubts||0),0);
   box.innerHTML=`<h3>Seguimiento y pérdidas</h3><div class="perf-grid">
+    <div class="perf-card perf-hl"><span>Cierres tras seguimiento</span><strong>${money(rec.amount)}</strong><small>${rec.n} aceptada${rec.n!==1?"s":""} después de que les escribiste</small></div>
+    <div class="perf-card perf-hl"><span>Pronóstico estimado</span><strong>${money(sm.forecast)}</strong><small>de ${money(sm.open)} en juego · ${sm.real?`tu cierre histórico ${Math.round(sm.rate*100)}%`:"usa 25% hasta tener 5 cierres"}</small></div>
+    <div class="perf-card"><span>Interés alto (60+)</span><strong>${money(sm.hot)}</strong><small>las que más conviene priorizar</small></div>
     <div class="perf-card"><span>Hasta aceptar</span><strong>${hrs===null?"—":hrs<48?hrs+" h":Math.round(hrs/24)+" días"}</strong><small>promedio</small></div>
     <div class="perf-card"><span>Opción más aceptada</span><strong>${top?escapeHtml(top[0]):"—"}</strong><small>${top?top[1]+" aceptada"+(top[1]>1?"s":""):"sin datos"}</small></div>
     <div class="perf-card"><span>En riesgo (vence ≤2 días)</span><strong>${money(risk)}</strong><small>sin respuesta</small></div>
