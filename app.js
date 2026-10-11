@@ -449,7 +449,7 @@ function publicProposalMarkup(p, mode="full"){
       ${mode==="full"&&p.status!=="expired"?`<div class="steps"><span><b>1</b> ${multi?"Elegí tu opción":"Revisá la propuesta"}</span><span><b>2</b> Aceptá</span><span><b>3</b> Reservá${p.depositPct>0?" con seña":""}</span></div><ul class="trust-strip"><li>🔒 Sin cargo al aceptar</li>${p.options.some(o=>o.hasWarranty&&o.warranty)?"<li>🛡️ Garantía</li>":""}<li>💬 Por WhatsApp</li></ul>`:""}
       ${p.status!=="expired"?perksMarkup(p):""}
       ${p.status!=="expired"?compareMarkup(p,mode):""}
-      <div class="choice-grid n${p.options.length}">${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
+      ${multi&&mode==="full"?carouselTabsMarkup(p):""}<div class="choice-grid n${p.options.length}${multi&&mode==="full"?" cc-carousel":""}"${multi&&mode==="full"?' tabindex="0" role="group" aria-roledescription="carrusel" aria-label="Opciones de la propuesta"':""}>${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
       <div class="public-includes" data-sec="incluye">${includes}</div>
       <div data-sec="pago">${payBlock(p)}</div>
       <p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
@@ -468,6 +468,7 @@ function publicProposalMarkup(p, mode="full"){
 function markSelected(id){
   const root=$("#publicContent"), multi=$$("[data-choice]",root).length>1;
   $$("[data-choice]",root).forEach(el=>el.classList.toggle("selected",el.dataset.choice===id&&multi));
+  $$("[data-cc-tab]",root).forEach(b=>b.classList.toggle("is-picked",b.dataset.ccTab===id&&multi));
   $$("[data-col]",root).forEach(el=>el.classList.toggle("sel",el.dataset.col===id&&multi));
 }
 
@@ -541,6 +542,7 @@ async function openPublic(id,preview=false,quiet=false){
   $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Quiero consultar la propuesta de ${p.client.name} por ${money(finalPrice(sel))}.`)}`;
   markSelected(sel.id);
   openModal("publicModal");
+  initChoiceCarousel();
   if(p.status==="accepted"){ renderAcceptedState(p); if(!preview||quiet) startTracker(p); return; }
   attachPublicEvents(p);
   if(!preview||quiet) startTracker(p);
@@ -576,7 +578,7 @@ function attachPublicEvents(p){
       p.lastEvent=`Cliente eligió ${p.options.find(x=>x.id===id)?.name||"una opción"}.`;
       state.activity.unshift({icon:"⭐",text:`${p.client.name} seleccionó una opción.`,time:"Ahora"});
       saveState(); if(Cloud.on) Cloud.rpc("track_proposal",{p_id:p.id,p_type:"select",p_option:id}).catch(()=>toast("No se pudo guardar la elección."));
-      markSelected(id); upd();
+      markSelected(id); upd(); celebratePick(id);
       const chosen=p.options.find(x=>x.id===id);
       $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Quiero avanzar con ${chosen.name} por ${money(finalPrice(chosen))}.`)}`;
       toast(`Elegiste ${chosen.name}.`);
@@ -1674,3 +1676,62 @@ const CCQR=(()=>{
 })();
 
 document.addEventListener("DOMContentLoaded",bind);
+
+
+/* ===== Carrusel de opciones (celular) =====
+   En pantallas angostas las opciones se deslizan en horizontal con snap, la activa se agranda y
+   unas pestañas con indicador animado permiten saltar entre ellas. En escritorio no cambia nada. */
+function carouselTabsMarkup(p){
+  return `<div class="cc-nav" data-cc-nav>
+    <div class="cc-tabs" role="tablist" aria-label="Elegí entre las opciones"><span class="cc-ind" aria-hidden="true"></span>${p.options.map(o=>`<button type="button" role="tab" class="cc-tab" data-cc-tab="${escapeHtml(o.id)}" aria-selected="false"><span>${escapeHtml(o.name)}</span></button>`).join("")}</div>
+    <p class="cc-hint">Deslizá para comparar · Tocá <b>Elegir</b> en la que más te sirva</p>
+  </div>`;
+}
+function initChoiceCarousel(){
+  const root=$("#publicContent"); if(!root) return;
+  const grid=$(".cc-carousel",root), nav=$("[data-cc-nav]",root); if(!grid||!nav) return;
+  const cards=[...grid.querySelectorAll("[data-choice]")], tabs=[...nav.querySelectorAll("[data-cc-tab]")], ind=nav.querySelector(".cc-ind");
+  if(cards.length<2) return;
+  const mq=matchMedia("(max-width:640px)"), reduce=()=>matchMedia("(prefers-reduced-motion:reduce)").matches;
+  let active=-1, raf=0;
+  const nearest=()=>{const c=grid.scrollLeft+grid.clientWidth/2; let b=0,d=Infinity; cards.forEach((el,i)=>{const x=Math.abs(el.offsetLeft+el.offsetWidth/2-c); if(x<d){d=x;b=i;}}); return b;};
+  const paint=i=>{
+    if(i===active) return; active=i;
+    cards.forEach((el,k)=>el.classList.toggle("is-active",k===i));
+    tabs.forEach((b,k)=>{b.setAttribute("aria-selected",k===i?"true":"false"); b.tabIndex=k===i?0:-1;});
+    const t=tabs[i]; if(t&&ind){ind.style.width=t.offsetWidth+"px"; ind.style.transform=`translateX(${t.offsetLeft}px)`;}
+    const box=ind&&ind.parentElement; if(box&&t) box.scrollTo({left:t.offsetLeft-(box.clientWidth-t.offsetWidth)/2,behavior:reduce()?"auto":"smooth"});
+    syncCta();
+  };
+  // Si la opción que se está mirando no es la elegida, el botón principal dice "Elegir X" (evita aceptar sin querer otra).
+  const syncCta=()=>{
+    const p=state.proposals.find(x=>x.id===currentProposalId), ab=$("#acceptBtn"), el=cards[active]; if(!p||!ab||!el||!mq.matches) return;
+    const sel=chosenOf(p), o=p.options.find(x=>x.id===el.dataset.choice);
+    ab.textContent=(!o||o.id===sel.id)?ctaLabel(p,sel):`Elegir ${o.name} · ${money(finalPrice(o))}`;
+  };
+  window.__ccSync=syncCta;
+  root.addEventListener("click",e=>{
+    const ab=e.target.closest&&e.target.closest("#acceptBtn"); if(!ab||!mq.matches||active<0) return;
+    const p=state.proposals.find(x=>x.id===currentProposalId), el=cards[active]; if(!p||!el||el.dataset.choice===chosenOf(p).id) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    const b=el.querySelector("[data-select-option]"); if(b) b.click();
+  },true);
+  const goTo=(i,smooth=true)=>{const el=cards[i]; if(!el) return; grid.scrollTo({left:el.offsetLeft-(grid.clientWidth-el.offsetWidth)/2,behavior:smooth&&!reduce()?"smooth":"auto"});};
+  grid.addEventListener("scroll",()=>{if(!mq.matches) return; cancelAnimationFrame(raf); raf=requestAnimationFrame(()=>{paint(nearest()); nav.classList.add("touched");});},{passive:true});
+  tabs.forEach((b,i)=>b.addEventListener("click",()=>goTo(i)));
+  cards.forEach((el,i)=>el.addEventListener("click",()=>{if(mq.matches&&i!==active) goTo(i);}));
+  grid.addEventListener("keydown",e=>{if(!mq.matches) return; if(e.key==="ArrowRight"){e.preventDefault(); goTo(Math.min(cards.length-1,nearest()+1));} if(e.key==="ArrowLeft"){e.preventDefault(); goTo(Math.max(0,nearest()-1));}});
+  const start=()=>{ if(!mq.matches) return; const i=Math.max(0,cards.findIndex(c=>c.classList.contains("selected"))); active=-1; goTo(i,false); paint(nearest()); };
+  requestAnimationFrame(()=>requestAnimationFrame(start));
+  const re=()=>{ if(mq.matches){ const i=active<0?0:active; active=-1; goTo(i,false); paint(nearest()); } };
+  addEventListener("resize",re,{passive:true});
+}
+// Respuesta a la acción de elegir: pulso en la tarjeta, vibración corta y un empujoncito al botón principal.
+function celebratePick(id){
+  const root=$("#publicContent"); if(!root) return;
+  const card=root.querySelector(`[data-choice="${CSS.escape(id)}"]`), cta=$("#acceptBtn");
+  if(card){card.classList.remove("just-picked"); void card.offsetWidth; card.classList.add("just-picked");}
+  if(cta){cta.classList.remove("nudge"); void cta.offsetWidth; cta.classList.add("nudge");}
+  try{navigator.vibrate&&navigator.vibrate(12);}catch(e){}
+  if(window.__ccSync) window.__ccSync();
+}
