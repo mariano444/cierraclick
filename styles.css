@@ -620,3 +620,45 @@ html.proposal-mode .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 
 .sum-res{margin-left:6px}
 .cta-note{font-size:11.5px}
+
+/* ===== v10 · Carrusel de opciones en celular =====
+   Las opciones se deslizan en horizontal con snap; la activa se agranda y las vecinas asoman.
+   Pestañas con indicador animado, pulso al elegir. En escritorio no se ve nada de esto. */
+.cc-nav{display:none}
+.choice.just-picked{animation:ccPick .6s cubic-bezier(.2,.8,.2,1)}
+@keyframes ccPick{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--pc,#15803d) 45%,transparent)}100%{box-shadow:0 0 0 18px color-mix(in srgb,var(--pc,#15803d) 0%,transparent)}}
+.public-card .public-seña.nudge{animation:ccNudge .7s ease}
+@keyframes ccNudge{0%,100%{transform:none}30%{transform:scale(1.03)}60%{transform:scale(.99)}}
+
+@media (max-width:640px){
+  .public-card:has(.cc-carousel) .cmp-box{display:none}
+
+  .cc-nav{display:block;margin:4px 0 8px}
+  .cc-tabs{position:relative;display:flex;padding:4px;background:var(--soft);border-radius:14px;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain}
+  .cc-tabs::-webkit-scrollbar{display:none}
+  .cc-ind{position:absolute;top:4px;bottom:4px;left:0;width:0;border-radius:11px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.12),0 4px 12px rgba(15,23,42,.1);transition:transform .38s cubic-bezier(.3,.9,.3,1),width .38s cubic-bezier(.3,.9,.3,1)}
+  .cc-tab{position:relative;flex:1 1 auto;min-width:72px;min-height:44px;padding:0 8px;border:0;border-radius:11px;background:none;font:inherit;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;transition:color .2s;-webkit-tap-highlight-color:transparent}
+  .cc-tab span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cc-tab[aria-selected="true"]{color:var(--pc,var(--accent))}
+  .cc-tab.is-picked span::before{content:"✓ "}
+  .cc-hint{margin:8px 2px 0;font-size:12.5px;line-height:1.35;color:var(--muted);text-align:center;max-height:40px;transition:opacity .3s,max-height .3s,margin .3s}
+  .cc-nav.touched .cc-hint{opacity:0;max-height:0;margin:0;overflow:hidden}
+
+  .public-card .choice-grid.cc-carousel{display:flex;grid-template-columns:none;align-items:stretch;gap:10px;position:relative;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin-inline:-6px;padding:8px 34px 18px;outline-offset:-2px}
+  .cc-carousel::-webkit-scrollbar{display:none}
+  .cc-carousel .choice{flex:0 0 100%;order:0;scroll-snap-align:center;scroll-snap-stop:always;transform:scale(.93);transform-origin:center top;opacity:.78;box-shadow:0 2px 8px rgba(15,23,42,.06);transition:transform .35s cubic-bezier(.3,.9,.3,1),opacity .3s,box-shadow .3s}
+  .cc-carousel .choice:hover{transform:scale(.93)}
+  .cc-carousel .choice.is-active,.cc-carousel .choice.is-active:hover{transform:none;opacity:1;box-shadow:0 14px 32px -10px rgba(15,23,42,.28)}
+  .cc-carousel .choice.selected{box-shadow:0 0 0 4px color-mix(in srgb,var(--pc,#15803d) 16%,transparent)}
+  .cc-carousel .choice.is-active.selected{box-shadow:0 0 0 4px color-mix(in srgb,var(--pc,#15803d) 16%,transparent),0 14px 32px -10px rgba(15,23,42,.28)}
+  .cc-carousel .choice:not(.is-active) .select{pointer-events:none}
+  .cc-carousel .choice .price{font-size:clamp(1.6rem,9cqi,2.2rem)}
+  /* barra de acción más baja para que se vea más de la opción */
+  .public-card:has(.cc-carousel) .public-actions{gap:6px;padding-top:8px}
+  .public-card:has(.cc-carousel) .cta-note{font-size:12px;line-height:1.3}
+  .public-card:has(.cc-carousel) .public-actions .public-whatsapp,.public-card:has(.cc-carousel) .public-actions .public-doubt{min-height:40px;font-size:12.5px}
+}
+@media (prefers-reduced-motion:reduce){
+  .cc-ind,.cc-carousel .choice,.cc-hint{transition:none}
+  .choice.just-picked,.public-card .public-seña.nudge{animation:none}
+}
