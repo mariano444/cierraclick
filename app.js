@@ -164,7 +164,7 @@ const Auth={
 const Cloud={
   get on(){return Auth.remote;},
   async rpc(name,args={}){const {data,error}=await (await Auth.client()).rpc(name,args);if(error)throw error;return data;},
-  proposal(row){return {...row,lostReason:row.lost_reason,recontactAt:row.recontact_at?new Date(row.recontact_at).getTime():null,client:{name:row.clients?.name||"Cliente",phone:row.clients?.phone||""},expiresAt:row.expires_at,cashDiscount:Number(row.cash_discount||0),depositPct:Number(row.deposit_pct||0),chosenOption:row.chosen_option_id,createdAt:row.created_at,acceptedAt:row.accepted_at,lastViewedAt:row.last_viewed_at,lastFollowUpAt:row.last_follow_up_at,proofSentAt:row.proof_sent_at,depositPaidAt:row.deposit_paid_at,depositStarted:row.deposit_started||0,followUps:row.follow_ups||0,bonusText:row.bonus_text||"",bonusHours:row.bonus_hours||0,slotsLeft:row.slots_left??null,slotsLabel:row.slots_label||"",acceptedName:row.accepted_name||"",termsAcceptedAt:row.terms_accepted_at||null,options:(row.proposal_options||[]).sort((a,b)=>a.position-b.position).map(o=>({id:o.id,name:o.name,price:Number(o.price),discountType:o.discount_type,discountValue:Number(o.discount_value),description:o.description,hasInstallments:o.has_installments,installments:o.installments,hasWarranty:o.has_warranty,warranty:o.warranty,features:o.features,terms:o.terms,recommended:o.recommended}))};},
+  proposal(row){return {...row,lostReason:row.lost_reason,recontactAt:row.recontact_at?new Date(row.recontact_at).getTime():null,client:{name:row.clients?.name||"Cliente",phone:row.clients?.phone||""},expiresAt:row.expires_at,cashDiscount:Number(row.cash_discount||0),depositPct:Number(row.deposit_pct||0),chosenOption:row.chosen_option_id,createdAt:row.created_at,acceptedAt:row.accepted_at,lastViewedAt:row.last_viewed_at,lastFollowUpAt:row.last_follow_up_at,proofSentAt:row.proof_sent_at,depositPaidAt:row.deposit_paid_at,depositStarted:row.deposit_started||0,followUps:row.follow_ups||0,holdHours:row.hold_hours||0,payExitAt:row.pay_exit_at?new Date(row.pay_exit_at).getTime():null,bonusText:row.bonus_text||"",bonusHours:row.bonus_hours||0,slotsLeft:row.slots_left??null,slotsLabel:row.slots_label||"",acceptedName:row.accepted_name||"",termsAcceptedAt:row.terms_accepted_at||null,options:(row.proposal_options||[]).sort((a,b)=>a.position-b.position).map(o=>({id:o.id,name:o.name,price:Number(o.price),discountType:o.discount_type,discountValue:Number(o.discount_value),description:o.description,hasInstallments:o.has_installments,installments:o.installments,hasWarranty:o.has_warranty,warranty:o.warranty,features:o.features,terms:o.terms,recommended:o.recommended}))};},
   async hydrate(){
     if(!this.on||!currentUser)return;
     const sb=await Auth.client(); await this.rpc("refresh_expired").catch(()=>{});
@@ -412,6 +412,7 @@ function optionMarkup(p,o,mode){
         ${d>0?`<div class="price-row"><span class="price-old">${money(o.price)}</span><span class="disc">${badge}</span></div>`:""}
         <div class="price">${money(fin)}</div>
       </div>
+      ${p.status!=="expired"?proofLine(p,o):""}
       ${o.why?`<blockquote class="choice-why">💬 ${escapeHtml(o.why)}<small>— ${escapeHtml(state.business.name||"")}</small></blockquote>`:""}
       ${meta?`<div class="choice-meta">${meta}</div>`:""}
       ${o.description?`<p>${escapeHtml(o.description)}</p>`:""}
@@ -440,12 +441,14 @@ function publicProposalMarkup(p, mode="full"){
   return `
     <div class="public-card" data-public-id="${escapeHtml(p.id)}" style="--pc:${brandStyle()}">
       <div class="public-brand">${avatarHtml()}${escapeHtml(state.business.name).toUpperCase()}${ratingChip()}</div>
-      <div class="public-greeting">Hola ${escapeHtml(p.client.name)} 👋</div>
+      <div class="public-greeting">Hola ${escapeHtml(firstName(p.client.name))} 👋</div>
       <div class="public-title">${escapeHtml(p.title)}</div>
       ${mode==="full"?`<span class="valid">${expiryLine(p)}</span>`:""}
+      ${p.status!=="expired"?sumBarMarkup(p,mode):""}
       ${p.status!=="expired"?voiceMarkup(p):""}
       ${mode==="full"&&p.status!=="expired"?`<div class="steps"><span><b>1</b> ${multi?"Elegí tu opción":"Revisá la propuesta"}</span><span><b>2</b> Aceptá</span><span><b>3</b> Reservá${p.depositPct>0?" con seña":""}</span></div><ul class="trust-strip"><li>🔒 Sin cargo al aceptar</li>${p.options.some(o=>o.hasWarranty&&o.warranty)?"<li>🛡️ Garantía</li>":""}<li>💬 Por WhatsApp</li></ul>`:""}
       ${p.status!=="expired"?perksMarkup(p):""}
+      ${p.status!=="expired"?compareMarkup(p,mode):""}
       <div class="choice-grid n${p.options.length}">${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
       <div class="public-includes" data-sec="incluye">${includes}</div>
       <div data-sec="pago">${payBlock(p)}</div>
@@ -454,7 +457,7 @@ function publicProposalMarkup(p, mode="full"){
       ${mode==="full"&&p.status!=="expired"?`${assuranceMarkup(p)}<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div>${acceptFormMarkup(p)}<div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
       <div class="public-actions">
         ${mode==="full"&&p.status!=="expired"?`<div class="cta-note" id="ctaNote"></div>`:""}
-        ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${multi?"Quiero esta opción":"Quiero esto"}</button>`:''}
+        ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${escapeHtml(ctaLabel(p,chosenOf(p)))}</button>`:''}
         ${mode==="full"?`<a class="public-whatsapp" id="publicWhatsapp" href="#" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}
         ${mode==="full"&&p.status!=="expired"?`<button type="button" class="public-doubt" id="doubtBtn">🙋 Tengo una duda</button>`:""}
       </div>
@@ -463,7 +466,9 @@ function publicProposalMarkup(p, mode="full"){
 }
 
 function markSelected(id){
-  $$("[data-choice]",$("#publicContent")).forEach(el=>el.classList.toggle("selected",el.dataset.choice===id&&$$("[data-choice]",$("#publicContent")).length>1));
+  const root=$("#publicContent"), multi=$$("[data-choice]",root).length>1;
+  $$("[data-choice]",root).forEach(el=>el.classList.toggle("selected",el.dataset.choice===id&&multi));
+  $$("[data-col]",root).forEach(el=>el.classList.toggle("sel",el.dataset.col===id&&multi));
 }
 
 function renderBuilderPreview(){
@@ -491,7 +496,7 @@ function openBuilder(){
 async function createProposal(e){
   e.preventDefault();
   const p=collectBuilderData();
-  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined,bonusText:undefined,bonusHours:undefined,slotsLeft:undefined,slotsLabel:undefined,voice:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);await saveProposalExtras(id,p);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
+  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined,bonusText:undefined,bonusHours:undefined,slotsLeft:undefined,slotsLabel:undefined,voice:undefined,holdHours:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);await saveProposalExtras(id,p);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
   state.proposals.unshift(p);
   const existing=state.clients.find(c=>c.phone===p.client.phone);
   if(existing) existing.proposals+=1;
@@ -542,8 +547,9 @@ async function openPublic(id,preview=false,quiet=false){
 }
 function attachPublicEvents(p){
   const upd=()=>{const o=chosenOf(p), sum=$("#pickSummary");
-    const ab=$("#acceptBtn"); if(ab) ab.textContent=`Quiero ${p.options.length>1?o.name:"esto"} · ${money(finalPrice(o))}`;
-    const cn=$("#ctaNote"); if(cn) cn.textContent=p.depositPct>0?`Aceptar no te cobra nada. Después reservás con la seña de ${money(depositOf(p,o))}.`:"Aceptar no te cobra nada todavía.";
+    const ab=$("#acceptBtn"); if(ab) ab.textContent=ctaLabel(p,o);
+    const st=$("#sumTxt"); if(st){const t=sumTexts(p,o); st.innerHTML=t.head; $("#sumDet").innerHTML=t.det;}
+    const cn=$("#ctaNote"); if(cn) cn.innerHTML=riskLine(p,o);
     if(sum){sum.hidden=false;sum.innerHTML=`<b>${escapeHtml(o.name)}</b> · ${money(finalPrice(o))}${p.depositPct>0?` · Seña ${money(depositOf(p,o))}`:""}${o.hasInstallments&&o.installments>1?` · ${o.installments} cuotas`:""}`;}
     const as=$("#acceptSum"); if(as){const dep=depositOf(p,o); as.innerHTML=`Elegiste <b>${escapeHtml(o.name)}</b> por <b>${money(finalPrice(o))}</b>.${p.depositPct>0?` Seña para reservar: <b>${money(dep)}</b> · saldo ${money(finalPrice(o)-dep)}.`:""}${bonusActive(p)?` 🎁 Incluye el bonus: ${escapeHtml(p.bonusText)}.`:""}`;}
     const at=$("#acceptTermsText"); if(at) at.textContent=[o.terms,p.conditions].filter(x=>x&&String(x).trim()).join("\n\n")||"Esta propuesta no tiene condiciones adicionales.";
@@ -576,6 +582,7 @@ function attachPublicEvents(p){
       toast(`Elegiste ${chosen.name}.`);
     });
   });
+  $("#sumBtn")?.addEventListener("click",()=>$("#acceptBtn")?.click());
   const aform=$("#acceptForm");
   $("#acceptBtn")?.addEventListener("click",()=>{
     if(!aform) return;
@@ -595,25 +602,35 @@ function attachPublicEvents(p){
   });
 }
 function renderAcceptedStateBase(p){
-  const option=chosenOf(p);
-  const paymentUrl=state.business.paymentLink||"", b=state.business, dep=depositOf(p,option), hasTransfer=!!(b.cbu||b.alias);
-  const trow=(l,v,c)=>v?`<div class="tr-row"><span>${l}</span><b>${escapeHtml(v)}</b>${c?`<button type="button" class="text-btn" data-copy="${escapeHtml(v)}">Copiar</button>`:""}</div>`:"";
-  const transferBlock=hasTransfer?`<div class="card transfer"><strong>Transferí la seña${dep?` de ${money(dep)}`:""}</strong>${trow("Titular",b.holder)}${trow("Banco",b.bank)}${trow("CBU/CVU",b.cbu,1)}${trow("Alias",b.alias,1)}${trow("CUIT/CUIL",b.cuit)}${b.transferNote?`<p class="hint">${escapeHtml(b.transferNote)}</p>`:""}<button type="button" class="public-whatsapp" id="proofBtn">${p.proofSentAt?"✅ Aviso enviado · reenviar":"💸 Ya transferí · enviar comprobante"}</button></div>`:"";
+  const option=chosenOf(p), b=state.business, e=escapeHtml;
+  const pu=String(b.paymentLink||"").trim(), paymentUrl=/^https?:\/\//i.test(pu)?pu:/^[\w-]+(\.[\w-]+)+(\/|$)/.test(pu)?"https://"+pu:"";
+  const hasTransfer=!!(b.cbu||b.alias), fin=finalPrice(option), dep=depositOf(p,option), paid=!!p.depositPaidAt, first=firstName(p.client.name);
+  const trow=(l,v,c)=>v?`<div class="tr-row"><span>${l}</span><b>${e(v)}</b>${c?`<button type="button" class="text-btn" data-copy="${e(v)}">Copiar</button>`:""}</div>`:"";
+  const copyAll=[["Titular",b.holder],["Banco",b.bank],["CBU/CVU",b.cbu],["Alias",b.alias],["CUIT/CUIL",b.cuit]].filter(r=>r[1]).map(r=>`${r[0]}: ${r[1]}`).concat(dep>0?[`Monto: ${money(dep)}`]:[]).join("\n");
+  const transferBlock=hasTransfer?`<div class="card transfer"><strong>Transferí la seña${dep?` de ${money(dep)}`:""}</strong>${trow("Titular",b.holder)}${trow("Banco",b.bank)}${trow("CBU/CVU",b.cbu,1)}${trow("Alias",b.alias,1)}${trow("CUIT/CUIL",b.cuit)}${b.transferNote?`<p class="hint">${e(b.transferNote)}</p>`:""}<button type="button" class="copy-all" data-copy="${e(copyAll)}">📋 Copiar todos los datos</button><button type="button" class="public-whatsapp" id="proofBtn">${p.proofSentAt?"✅ Aviso enviado · reenviar":"💸 Ya transferí · enviar comprobante"}</button></div>`:"";
+  const amt=dep>0?`<div class="pay-amt"><span>Seña para reservar tu lugar</span><b>${money(dep)}</b><small>Saldo: ${money(fin-dep)}</small></div>`:`<div class="pay-amt"><span>Total de tu propuesta</span><b>${money(fin)}</b><small>No hay seña: coordinás el pago con ${e(b.name)}.</small></div>`;
+  const payLabel=dep>0?`Pagar seña de ${money(dep)}`:"Ir al pago";
+  let primary="";
+  if(!paid){
+    if(paymentUrl) primary=`<div class="pay-card">${amt}<details class="qr-box" id="qrBox"><summary>📱 Pagar desde otro dispositivo (QR)</summary><div id="qrHolder"></div></details></div>${hasTransfer?`<details class="alt-pay"><summary>Prefiero pagar por transferencia</summary>${transferBlock}</details>`:""}`;
+    else if(hasTransfer) primary=`<div class="pay-card">${amt}${transferBlock}</div>`;
+    else primary=`<div class="pay-card">${amt}<p class="hint">${e(b.name)} te va a pasar los datos para pagar por WhatsApp.</p></div>`;
+  }
+  const mainAction=paid?"":paymentUrl?`<a class="public-seña" href="${e(paymentUrl)}" target="_blank" rel="noopener" id="depositLink">${e(payLabel)}</a>`:hasTransfer?`<button type="button" class="public-seña" data-copy="${e(copyAll)}">📋 Copiar datos${dep>0?` y transferir ${money(dep)}`:""}</button>`:Cloud.on?"":`<button class="public-seña" id="depositDemo">${e(payLabel)} (demo)</button>`;
+  const lead=paid?"Tu reserva está confirmada.":p.proofSentAt?`${e(b.name)} está verificando tu transferencia.`:dep>0?`Falta un solo paso: la seña de <b>${money(dep)}</b>.`:"Tu elección quedó registrada.";
   $("#publicContent").innerHTML=`
     <div class="public-card" style="--pc:${brandStyle()}">
-      <div class="public-brand">${avatarHtml()}${escapeHtml(state.business.name).toUpperCase()}${ratingChip()}</div>
-      <div class="public-greeting">¡Excelente, ${escapeHtml(p.client.name)}! ✅</div>
-      <p style="color:#64748b">Tu elección quedó registrada: <strong>${escapeHtml(option.name)}</strong> · ${money(finalPrice(option))}</p>
-      ${p.acceptedName?`<p class="accepted-by">Aceptada por <b>${escapeHtml(p.acceptedName)}</b>${p.termsAcceptedAt?" · condiciones aceptadas":""}</p>`:""}${bonusWonMarkup(p)}
-      ${p.depositPaidAt?`<div class="pick-summary">💰 <b>Seña recibida.</b> ¡Tu reserva está confirmada!</div>`:p.proofSentAt?`<div class="pick-summary">💸 Avisaste que transferiste. ${escapeHtml(b.name)} lo está verificando.</div>`:""}
-      <div class="card" style="margin-top:16px;background:#f8fafc">
-        <strong>Para reservar la operación</strong>
-        <p style="color:#64748b;margin-bottom:0">${p.depositPct>0?`Seña a pagar: <b>${money(depositOf(p,option))}</b> (${p.depositPct}%) · Saldo: ${money(finalPrice(option)-depositOf(p,option))}. `:""}Aboná la seña mediante el link de pago del vendedor.</p>
-      </div>
-      ${p.depositPaidAt?"":transferBlock}
+      <div class="public-brand">${avatarHtml()}${e(state.business.name).toUpperCase()}${ratingChip()}</div>
+      <div class="public-greeting">${paid?"¡Reserva confirmada!":`¡Listo, ${e(first)}!`} ✅</div>
+      <p class="pay-lead">${lead}</p>
+      <p class="pay-choice">Tu elección: <strong>${e(option.name)}</strong> · ${money(fin)}</p>
+      ${p.acceptedName?`<p class="accepted-by">Aceptada por <b>${e(p.acceptedName)}</b>${p.termsAcceptedAt?" · condiciones aceptadas":""}</p>`:""}${bonusWonMarkup(p)}
+      ${paid?`<div class="state-note">💰 <b>Seña recibida.</b> ¡Tu reserva está confirmada!</div>`:p.proofSentAt?`<div class="state-note">💸 Avisaste que transferiste. ${e(b.name)} lo está verificando.</div>`:""}
+      ${paid||p.proofSentAt?"":holdMarkup(p)}
+      ${primary}
       ${afterMarkup(p,true)}
       <div class="public-actions">
-        ${p.depositPaidAt?"":paymentUrl?`<a class="public-seña" href="${escapeHtml(paymentUrl)}" target="_blank" rel="noopener" id="depositLink">PAGAR SEÑA</a>`:hasTransfer||Cloud.on?"":`<button class="public-seña" id="depositDemo">PAGAR SEÑA (DEMO)</button>`}
+        ${mainAction}
         <button class="public-whatsapp" id="receiptBtn" type="button">📄 Descargar constancia</button>
         <a class="public-whatsapp" href="https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Acepté la propuesta y quiero avanzar con la seña.`)}" target="_blank" rel="noopener">Escribir al vendedor</a>
       </div>
@@ -626,8 +643,10 @@ function renderAcceptedStateBase(p){
     window.open(`https://wa.me/${normalizePhone(b.whatsapp)}?text=${encodeURIComponent(`Hola ${b.name} 👋 Soy ${p.client.name}. Ya transferí la seña${dep?` de ${money(dep)}`:""} por "${p.title}" (${option.name}). Te mando el comprobante por acá.`)}`,"_blank","noopener");
     toast("Adjuntá el comprobante en el chat de WhatsApp.");
   });
-  if($("#depositLink")) $("#depositLink").addEventListener("click",()=>{p.depositStarted=(p.depositStarted||0)+1;saveState();if(Cloud.on)Cloud.rpc("track_proposal",{p_id:p.id,p_type:"deposit_click"}).catch(()=>{});});
-  $("#depositDemo")?.addEventListener("click",()=>{p.depositStarted=(p.depositStarted||0)+1;saveState();if(Cloud.on)Cloud.rpc("track_proposal",{p_id:p.id,p_type:"deposit_click"}).catch(()=>{});toast("Demo: configurá un link de pago en Ajustes.");});
+  $("#depositLink")?.addEventListener("click",()=>{p._payClicked=true;p.depositStarted=(p.depositStarted||0)+1;saveState();if(Cloud.on)Cloud.rpc("track_proposal",{p_id:p.id,p_type:"deposit_click"}).catch(()=>{});});
+  $("#depositDemo")?.addEventListener("click",()=>{p._payClicked=true;p.depositStarted=(p.depositStarted||0)+1;saveState();if(Cloud.on)Cloud.rpc("track_proposal",{p_id:p.id,p_type:"deposit_click"}).catch(()=>{});toast("Demo: configurá un link de pago en Ajustes.");});
+  const qb=$("#qrBox"); if(qb){const svg=CCQR.svg(paymentUrl,184); if(svg) $("#qrHolder").innerHTML=svg; else qb.remove();}
+  watchPayExit(p);
 }
 
 function renderGreeting(){
@@ -692,6 +711,7 @@ function todayItems(){
   state.proposals.forEach(p=>{
     if(p.status==="accepted"&&p.proofSentAt&&!p.depositPaidAt){out.push({p,reason:"💸 Avisó que transfirió: verificá y confirmá la seña.",prio:0});return;}
     if(p.remindAt&&p.remindAt<=now&&["sent","viewed"].includes(p.status)){out.push({p,reason:"⏰ Pidió que lo contactes hoy.",prio:0});return;}
+    if(p.status==="accepted"&&!p.depositPaidAt&&!p.proofSentAt&&p.payExitAt&&now-p.payExitAt>=20*6e4){out.push({p,reason:"👋 Abrió la pantalla de pago y se fue: ofrecele ayuda con la transferencia.",prio:0});return;}
     if(p.status==="accepted"&&!p.depositPaidAt&&p.depositPct>0){const ha=(now-new Date(p.acceptedAt||p.createdAt).getTime())/36e5;if(ha>=6)out.push({p,reason:`✅ Aceptó hace ${hTxt(ha)} y falta la seña.`,prio:1});return;}
     if(p.status==="lost"){if(p.recontactAt&&p.recontactAt<=now)out.push({p,reason:`🔁 Hora de retomar (${p.lostReason||"perdida"}).`,prio:2});return;}
     if(p.status==="accepted") return;
@@ -720,7 +740,7 @@ function duplicateProposal(id){
   $("#clientName").value=p.client.name; $("#clientPhone").value=p.client.phone;
   $("#proposalTitle").value=p.title; $("#includes").value=(p.includes||[]).join("\n"); $("#conditions").value=p.conditions||"";
   $("#cashDiscount").value=p.cashDiscount||0; $("#depositPct").value=p.depositPct||0;
-  $("#bonusText").value=p.bonusText||""; $("#bonusHours").value=p.bonusHours||48; $("#slotsLeft").value=p.slotsLeft??""; $("#slotsLabel").value=p.slotsLabel||"";
+  $("#bonusText").value=p.bonusText||""; $("#bonusHours").value=p.bonusHours||48; $("#slotsLeft").value=p.slotsLeft??""; $("#slotsLabel").value=p.slotsLabel||""; $("#holdHours").value=p.holdHours||"";
   $$('input[name="pay"]').forEach(x=>x.checked=(p.payments||[]).includes(x.value));
   $$('input[name="kind"]').forEach(x=>x.checked=x.value===(p.kind||"service"));
   builderKind=p.kind||"service";
@@ -759,6 +779,7 @@ function followMsg(p){
   const first=p.client.name.split(" ")[0], link=shareLink(p), o=chosenOf(p), tot=money(finalPrice(o));
   const dep=p.depositPct>0?money(depositOf(p,o)):tot, vig=fmtDate(p.expiresAt), bn=bonusActive(p)?` 🎁 Si avanzás antes del ${fmtDateTime(bonusDeadline(p))}: ${p.bonusText}.`:"";
   if(p.status==="lost") return `Hola ${first} 👋 Hace unos días hablamos de "${p.title}". ¿Retomamos? Si algo cambió, te lo ajusto.`;
+  if(p.status==="accepted"&&p.payExitAt&&!p.proofSentAt&&!p.depositPaidAt) return `Hola ${first} 👋 ¿Te ayudo con la transferencia? Si te trabaste con algún paso o con los datos, decime y lo resolvemos ahora.${p.depositPct>0?` La seña es ${dep}.`:""}`;
   if(p.status==="accepted") return `Hola ${first} 👋 ¡Gracias por aceptar! Para dejarte reservado queda la seña de ${dep}. Si ya la hiciste, mandame el comprobante y lo confirmo: ${link}`;
   if(p.status==="expired") return `Hola ${first} 👋 Tu propuesta venció el ${vig}. Si querés, te la actualizo hoy y retomamos: ${link}`;
   if((p.followUps||0)>=3) return `Hola ${first}, no quiero molestarte 🙂 Dejo la propuesta disponible hasta el ${vig} por si querés retomarla más adelante: ${link}`;
@@ -797,7 +818,7 @@ function startTracker(p){
   }
   on(root,"click",e=>{const el=e.target.closest("button,a,summary,[data-choice]"); if(!el) return; let key;
     if(el.dataset.selectOption) key="Elige "+optName(el.dataset.selectOption);
-    else if(el.id==="acceptBtn") key="Toca el botón de aceptar";
+    else if(el.id==="acceptBtn"||el.id==="sumBtn") key="Toca el botón de aceptar";
     else if(el.id==="acceptConfirm") key="Toca «Confirmar mi aceptación»";
     else if(el.tagName==="SUMMARY"&&el.closest(".terms-box")) key="Abre las condiciones antes de aceptar";
     else if(el.id==="publicWhatsapp") key="Toca WhatsApp";
@@ -864,7 +885,7 @@ function engInsights(p,S){
 }
 function engHtml(p,S){
   if(!S.total&&!S.taps.length&&!S.sessions) return '<p class="tool-sub">Todavía no hay datos de atención. Se registran cuando el cliente abre el link.</p>';
-  const SEC={incluye:"Qué incluye",pago:"Forma de pago",condiciones:"Condiciones",garantias:"Garantías y preguntas",despues:"Qué pasa después",mensaje:"Mensaje de voz",bonus:"Bonus y cupos",aceptar:"Confirmación"};
+  const SEC={incluye:"Qué incluye",pago:"Forma de pago",condiciones:"Condiciones",garantias:"Garantías y preguntas",despues:"Qué pasa después",mensaje:"Mensaje de voz",bonus:"Bonus y cupos",aceptar:"Confirmación",resumen:"Resumen fijo",comparar:"Comparativa"};
   const bars=(obj,lab)=>{const e=Object.entries(obj).filter(x=>x[1]>=1000).sort((a,b)=>b[1]-a[1]); const mx=e[0]?e[0][1]:1;
     return e.map(([k,ms])=>`<div class="eng-row"><span>${escapeHtml(lab(k))}</span><i style="width:${Math.max(4,Math.round(ms/mx*100))}%"></i><em>${fmtDur(ms)}</em></div>`).join("")||'<p class="tool-sub">Sin datos suficientes.</p>';};
   const ins=engInsights(p,S);
@@ -1312,13 +1333,14 @@ function applyV3(p,x){
   p.bonusDeadlineMs=x.bonusDeadline?new Date(x.bonusDeadline).getTime():0;
   p.slotsLeft=x.slotsLeft??null; p.slotsLabel=x.slotsLabel||"";
   p.voice=safeAudio(x.voice);
+  p.holdHours=x.holdHours||0; p.proof=x.proof&&typeof x.proof==="object"?x.proof:{};
   return p;
 }
 function perksFromForm(){
   const t=($("#bonusText")?.value||"").trim().slice(0,140);
   const h=Math.min(168,Math.max(1,parseInt($("#bonusHours")?.value,10)||48));
   const sv=$("#slotsLeft")?.value, sl=(sv===""||sv==null)?null:Math.min(999,Math.max(0,parseInt(sv,10)||0));
-  return {bonusText:t,bonusHours:t?h:0,slotsLeft:sl,slotsLabel:sl==null?"":($("#slotsLabel")?.value||"").trim().slice(0,60),voice:builderVoice||""};
+  return {bonusText:t,bonusHours:t?h:0,slotsLeft:sl,slotsLabel:sl==null?"":($("#slotsLabel")?.value||"").trim().slice(0,60),voice:builderVoice||"",holdHours:($("#holdHours")?.value||"")===""?0:Math.min(720,Math.max(0,parseInt($("#holdHours").value,10)||0))};
 }
 function perksMarkup(p){
   const out=[], d=bonusDeadline(p), n=p.slotsLeft;
@@ -1358,7 +1380,7 @@ function acceptFormMarkup(p){
     <label class="accept-chk"><input type="checkbox" id="acceptTerms"><span>Leí y acepto las condiciones de esta propuesta.</span></label>
     <p class="voice-status" id="acceptErr" role="alert" hidden></p>
     <button type="submit" class="public-seña" id="acceptConfirm">Confirmar mi aceptación</button>
-    <p class="accept-note">${p.depositPct>0?"Aceptar no te cobra nada. Después reservás con la seña.":"Aceptar no te cobra nada todavía."}</p>
+    <p class="accept-note">${p.depositPct>0?"Aceptar no te cobra nada. Después reservás con la seña.":"Aceptar no te cobra nada todavía."}${p.holdHours>0?` Tu lugar queda reservado ${p.holdHours} h desde que aceptás.`:""}</p>
   </form>`;
 }
 // Confirma primero en el servidor y recién después muestra la aceptación (sin "aceptación optimista").
@@ -1381,8 +1403,8 @@ async function acceptNow(p,o,name){
   saveState(); renderAcceptedState(p); return true;
 }
 async function saveProposalExtras(id,p){
-  if(!(p.bonusText||p.slotsLeft!=null||p.voice)) return;
-  try{await Cloud.rpc("set_proposal_extras",{p_id:id,p:{bonusText:p.bonusText||"",bonusHours:p.bonusHours||0,slotsLeft:p.slotsLeft==null?"":String(p.slotsLeft),slotsLabel:p.slotsLabel||"",voice:safeAudio(p.voice)}});}
+  if(!(p.bonusText||p.slotsLeft!=null||p.voice||p.holdHours)) return;
+  try{await Cloud.rpc("set_proposal_extras",{p_id:id,p:{bonusText:p.bonusText||"",bonusHours:p.bonusHours||0,slotsLeft:p.slotsLeft==null?"":String(p.slotsLeft),slotsLabel:p.slotsLabel||"",voice:safeAudio(p.voice),holdHours:p.holdHours||0}});}
   catch(e){toast("La propuesta se creó, pero bonus, cupos o audio necesitan ejecutar supabase_v3.sql en Supabase.");}
 }
 // ---- Audio del vendedor (grabado o subido) ----
@@ -1449,12 +1471,14 @@ function cancelVoice(){
 function tickCountdowns(){
   document.querySelectorAll("[data-cd]").forEach(el=>{
     const left=Number(el.dataset.cd)-Date.now();
-    if(left<=0){const box=el.closest(".bonus-box"); if(box) box.remove(); else el.textContent="0 min 00 s"; return;}
+    if(left<=0){const hb=el.closest(".hold-box"); if(hb){hb.classList.add("late"); hb.textContent="⏱ El plazo de reserva terminó. Escribile al vendedor para confirmar si el lugar sigue disponible."; return;} const box=el.closest(".bonus-box"); if(box) box.remove(); else el.textContent="0 min 00 s"; return;}
     el.textContent=fmtLeft(left);
   });
 }
 function initPerks(){
   setInterval(tickCountdowns,1000);
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden") payExitFire();});
+  window.addEventListener("pagehide",payExitFire);
   const vf=$("#voiceField"); if(!vf) return;
   vf.addEventListener("click",e=>{
     const b=e.target.closest("button[data-voice]"); if(!b) return;
@@ -1469,5 +1493,184 @@ function initPerks(){
   });
   renderVoiceField();
 }
+
+/* ===== v24: persuasión en la vista del cliente ===== */
+function firstName(n){return String(n||"").trim().split(/\s+/)[0]||"";}
+function shortDate(iso){return new Date(iso+"T12:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short"});}
+function dayWord(ms){
+  const d=new Date(ms), n=new Date(), a=new Date(d.getFullYear(),d.getMonth(),d.getDate()), b=new Date(n.getFullYear(),n.getMonth(),n.getDate());
+  const diff=Math.round((a-b)/864e5), t=d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",hour12:false});
+  return (diff===0?"hoy":diff===1?"mañana":d.toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}))+" "+t;
+}
+// Texto del botón: dice qué paga y qué obtiene.
+function ctaLabel(p,o){const dep=depositOf(p,o); return dep>0?`Reservar mi lugar con ${money(dep)}`:`Aceptar · ${money(finalPrice(o))}`;}
+function sumTexts(p,o){
+  const fin=finalPrice(o), dep=depositOf(p,o), multi=p.options.length>1;
+  const head=`<span class="sum-lab">Tu propuesta${multi?` · ${escapeHtml(o.name)}`:""}:</span> <b>${money(fin)}</b>${dep>0?` <span class="sum-lab sum-res">Reservás con</span> <b>${money(dep)}</b>`:""}`;
+  const det=[dep>0?`Saldo ${money(fin-dep)}`:"",`Vigente hasta el ${shortDate(p.expiresAt)}`].filter(Boolean).join(" · ");
+  return {head,det};
+}
+// Resumen fijo: quién, cuánto y cuál es el único próximo paso. Se actualiza al elegir otra opción.
+function sumBarMarkup(p,mode){
+  const o=chosenOf(p), t=sumTexts(p,o), full=mode==="full";
+  return `<div class="sum-bar${full?"":" static"}" id="sumBar" data-sec="resumen"><div class="sum-info"><div class="sum-head" id="sumTxt">${t.head}</div><small id="sumDet">${t.det}</small></div>${full?`<button type="button" class="sum-btn" id="sumBtn">${depositOf(p,o)>0?"Reservar":"Aceptar"}</button>`:""}</div>`;
+}
+// Reduce el riesgo percibido junto al botón (no al final de la página).
+function riskLine(p,o){
+  const pol=String(state.business.depositPolicy||"").trim().replace(/\s+/g," "), parts=[];
+  parts.push(p.depositPct>0?`Aceptar no te cobra nada. Después reservás con la seña de ${money(depositOf(p,o))}.`:"Aceptar no te cobra nada todavía.");
+  if(pol) parts.push("🔒 "+escapeHtml(pol.length>120?pol.slice(0,117)+"…":pol));
+  if(o.hasWarranty&&o.warranty) parts.push("🛡️ Garantía: "+escapeHtml(o.warranty));
+  return parts.map((x,i)=>i?x:escapeHtml(x)).join("<br>");
+}
+function compareMarkup(p,mode){
+  if(p.options.length<2) return "";
+  const O=p.options, e=escapeHtml, dep=p.depositPct>0;
+  const anyInst=O.some(o=>o.hasInstallments&&o.installments>1), anyW=O.some(o=>o.hasWarranty&&o.warranty), anyF=O.some(o=>(o.features||"").trim());
+  const feats=o=>{const l=(o.features||"").split("\n").map(x=>x.trim()).filter(Boolean); return l.length?`<ul class="cmp-feat">${l.slice(0,3).map(x=>`<li>${e(x)}</li>`).join("")}</ul>${l.length>3?`<small>y ${l.length-3} más</small>`:""}`:"—";};
+  const rows=[
+    ["Precio final",o=>`${discountAmount(o)>0?`<s>${money(o.price)}</s><br>`:""}<b>${money(finalPrice(o))}</b>`],
+    dep?["Seña para reservar",o=>money(depositOf(p,o))]:null,
+    dep?["Saldo",o=>money(finalPrice(o)-depositOf(p,o))]:null,
+    anyInst?["Cuotas",o=>o.hasInstallments&&o.installments>1?`${o.installments} de ${money(finalPrice(o)/o.installments)}`:"—"]:null,
+    anyW?["Garantía",o=>o.hasWarranty&&o.warranty?e(o.warranty):"—"]:null,
+    anyF?["Incluye",feats]:null
+  ].filter(Boolean);
+  const cell=(o,h)=>`<td class="${o.recommended?"rec":""}" data-col="${e(o.id)}">${h}</td>`;
+  const head=O.map(o=>`<th class="${o.recommended?"rec":""}" data-col="${e(o.id)}">${o.recommended?'<span class="tag">⭐ Recomendada</span>':""}${e(o.name)}</th>`).join("");
+  const body=rows.map(([l,f])=>`<tr><th scope="row">${l}</th>${O.map(o=>cell(o,f(o))).join("")}</tr>`).join("");
+  const pick=mode==="full"&&p.status!=="expired"?`<tr class="cmp-pick"><th scope="row"></th>${O.map(o=>cell(o,`<button type="button" class="select" data-select-option="${e(o.id)}" aria-label="Elegir ${e(o.name)}">Elegir</button>`)).join("")}</tr>`:"";
+  return `<div class="cmp-box" data-sec="comparar"><h4>Compará de un vistazo</h4><div class="cmp-wrap"><table class="cmp"><thead><tr><th></th>${head}</tr></thead><tbody>${body}${pick}</tbody></table></div></div>`;
+}
+// Prueba social: solo si el sistema la calcula de verdad y hay al menos 3 casos.
+function proofCount(p,o){
+  if(p.proof&&typeof p.proof==="object") return Number(p.proof[o.id])||0;
+  const lim=Date.now()-30*864e5, nm=String(o.name||"").trim().toLowerCase();
+  return state.proposals.filter(x=>x.id!==p.id&&x.status==="accepted"&&x.acceptedAt&&new Date(x.acceptedAt).getTime()>=lim&&(x.depositPaidAt||!(x.depositPct>0))&&String((chosenOf(x)||{}).name||"").trim().toLowerCase()===nm).length;
+}
+function proofLine(p,o){
+  const n=proofCount(p,o); if(n<3) return "";
+  return `<p class="proof">👥 ${n} clientes ya ${p.depositPct>0?"reservaron":"eligieron"} esta opción en los últimos 30 días</p>`;
+}
+// Urgencia real: el vendedor define cuánto tiempo retiene el lugar una vez aceptada.
+function holdUntil(p){return p.holdHours>0&&p.acceptedAt?new Date(p.acceptedAt).getTime()+p.holdHours*36e5:0;}
+function holdMarkup(p){
+  const h=holdUntil(p); if(!h) return "";
+  if(Date.now()>=h) return `<div class="hold-box late">⏱ El plazo de reserva (${escapeHtml(dayWord(h))}) terminó. Escribile a ${escapeHtml(state.business.name)} para confirmar si el lugar sigue disponible.</div>`;
+  return `<div class="hold-box">⏱ <span>Tu lugar queda reservado hasta <b>${escapeHtml(dayWord(h))}</b> · te quedan <b data-cd="${h}">${fmtLeft(h-Date.now())}</b></span></div>`;
+}
+// Cierre con intención: si abrió la pantalla de pago y se fue sin pagar ni avisar, queda marcado para el vendedor.
+let _payWatch=null;
+function watchPayExit(p){_payWatch=(p.depositPaidAt||p.proofSentAt||(Cloud.on&&currentUser))?null:{p,t0:Date.now(),sent:false};}
+function payExitFire(){
+  const w=_payWatch; if(!w||w.sent) return; const p=w.p;
+  if(p.depositPaidAt||p.proofSentAt||p._payClicked||Date.now()-w.t0<3000) return;
+  w.sent=true; p.payExitAt=Date.now(); p.lastEvent="Abrió la pantalla de pago y se fue."; saveState();
+  if(Cloud.on) Cloud.rpc("report_pay_exit",{p_id:p.id}).catch(()=>{});
+}
+
+/* ===== Generador de QR mínimo (modo byte, versiones 1-10, corrección L/M). Sin dependencias. ===== */
+const CCQR=(()=>{
+  const EXP=new Uint8Array(512), LOG=new Uint8Array(256);
+  for(let i=0,x=1;i<255;i++){EXP[i]=x;LOG[x]=i;x<<=1;if(x&256)x^=0x11d;}
+  for(let i=255;i<512;i++) EXP[i]=EXP[i-255];
+  const mul=(a,b)=>a&&b?EXP[LOG[a]+LOG[b]]:0;
+  const rsEc=(data,n)=>{
+    let g=[1]; for(let i=0;i<n;i++){const ng=new Array(g.length+1).fill(0); for(let j=0;j<g.length;j++){ng[j]^=g[j];ng[j+1]^=mul(g[j],EXP[i]);} g=ng;}
+    const r=new Array(n).fill(0);
+    for(const b of data){const f=b^r.shift(); r.push(0); for(let i=0;i<n;i++) r[i]^=mul(g[i+1],f);}
+    return r;
+  };
+  // [bytes de corrección por bloque, bloques grupo 1, datos grupo 1, bloques grupo 2, datos grupo 2]
+  const T={
+    L:[null,[7,1,19,0,0],[10,1,34,0,0],[15,1,55,0,0],[20,1,80,0,0],[26,1,108,0,0],[18,2,68,0,0],[20,2,78,0,0],[24,2,97,0,0],[30,2,116,0,0],[18,2,68,2,69]],
+    M:[null,[10,1,16,0,0],[16,1,28,0,0],[26,1,44,0,0],[18,2,32,0,0],[24,2,43,0,0],[16,4,27,0,0],[18,4,31,0,0],[22,2,38,2,39],[22,3,36,2,37],[26,4,43,1,44]]
+  };
+  const FMT={L:1,M:0}, ALIGN=[null,[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50]];
+  const dataCap=(v,e)=>{const t=T[e][v];return t[1]*t[2]+t[3]*t[4];};
+  function build(bytes,v,e){
+    const t=T[e][v], cap=dataCap(v,e), bits=[];
+    const put=(val,n)=>{for(let i=n-1;i>=0;i--) bits.push((val>>>i)&1);};
+    put(4,4); put(bytes.length,v<10?8:16); bytes.forEach(b=>put(b,8));
+    put(0,Math.min(4,cap*8-bits.length)); while(bits.length%8) bits.push(0);
+    const cw=[]; for(let i=0;i<bits.length;i+=8) cw.push(parseInt(bits.slice(i,i+8).join(""),2));
+    for(let p=0xEC;cw.length<cap;p^=0xEC^0x11) cw.push(p);
+    const blocks=[]; let o=0;
+    for(let i=0;i<t[1]+t[3];i++){const n=i<t[1]?t[2]:t[4]; const d=cw.slice(o,o+n); o+=n; blocks.push({d,e:rsEc(d,t[0])});}
+    const out=[], maxd=Math.max(t[2],t[4]);
+    for(let i=0;i<maxd;i++) blocks.forEach(b=>{if(i<b.d.length) out.push(b.d[i]);});
+    for(let i=0;i<t[0];i++) blocks.forEach(b=>out.push(b.e[i]));
+    return out;
+  }
+  function matrix(all,v,e){
+    const size=17+4*v, M=Array.from({length:size},()=>new Array(size).fill(false)), F=Array.from({length:size},()=>new Array(size).fill(false));
+    const setF=(x,y,c)=>{M[y][x]=c;F[y][x]=true;};
+    for(let i=0;i<size;i++){setF(6,i,i%2===0);setF(i,6,i%2===0);}
+    const finder=(cx,cy)=>{for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){const x=cx+dx,y=cy+dy; if(x<0||y<0||x>=size||y>=size) continue; const d=Math.max(Math.abs(dx),Math.abs(dy)); setF(x,y,d!==2&&d!==4);}};
+    finder(3,3); finder(size-4,3); finder(3,size-4);
+    const ap=ALIGN[v];
+    ap.forEach((a,i)=>ap.forEach((b,j)=>{
+      if((i===0&&j===0)||(i===0&&j===ap.length-1)||(i===ap.length-1&&j===0)) return;
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++) setF(a+dx,b+dy,Math.max(Math.abs(dx),Math.abs(dy))!==1);
+    }));
+    const fmt=mask=>{
+      const d=(FMT[e]<<3)|mask; let r=d; for(let i=0;i<10;i++) r=(r<<1)^((r>>>9)*0x537);
+      const bits=((d<<10)|r)^0x5412, g=i=>((bits>>>i)&1)===1;
+      for(let i=0;i<=5;i++) setF(8,i,g(i)); setF(8,7,g(6)); setF(8,8,g(7)); setF(7,8,g(8));
+      for(let i=9;i<15;i++) setF(14-i,8,g(i));
+      for(let i=0;i<8;i++) setF(size-1-i,8,g(i));
+      for(let i=8;i<15;i++) setF(8,size-15+i,g(i));
+      setF(8,size-8,true);
+    };
+    fmt(0);
+    if(v>=7){let r=v; for(let i=0;i<12;i++) r=(r<<1)^((r>>>11)*0x1F25); const bits=(v<<12)|r;
+      for(let i=0;i<18;i++){const c=((bits>>>i)&1)===1, a=size-11+i%3, b=Math.floor(i/3); setF(a,b,c); setF(b,a,c);}}
+    let k=0;
+    for(let right=size-1;right>=1;right-=2){
+      if(right===6) right=5;
+      for(let vert=0;vert<size;vert++) for(let j=0;j<2;j++){
+        const x=right-j, up=((right+1)&2)===0, y=up?size-1-vert:vert;
+        if(!F[y][x]&&k<all.length*8){M[y][x]=((all[k>>>3]>>>(7-(k&7)))&1)===1;k++;}
+      }
+    }
+    const MASK=[(r,c)=>(r+c)%2===0,(r)=>r%2===0,(r,c)=>c%3===0,(r,c)=>(r+c)%3===0,(r,c)=>(Math.floor(r/2)+Math.floor(c/3))%2===0,(r,c)=>(r*c)%2+(r*c)%3===0,(r,c)=>((r*c)%2+(r*c)%3)%2===0,(r,c)=>((r+c)%2+(r*c)%3)%2===0];
+    const base=M.map(r=>r.slice());
+    const penalty=m=>{
+      let p=0;
+      for(const line of [m,m[0].map((_,c)=>m.map(r=>r[c]))]){
+        for(const row of line){
+          let run=1; for(let i=1;i<=size;i++){ if(i<size&&row[i]===row[i-1]) run++; else {if(run>=5) p+=run-2; run=1;} }
+          const s=row.map(x=>x?"1":"0").join("");
+          for(const q of ["10111010000","00001011101"]){let at=s.indexOf(q); while(at>=0){p+=40; at=s.indexOf(q,at+1);}}
+        }
+      }
+      for(let y=0;y<size-1;y++)for(let x=0;x<size-1;x++){const c=m[y][x]; if(c===m[y][x+1]&&c===m[y+1][x]&&c===m[y+1][x+1]) p+=3;}
+      let dark=0; m.forEach(r=>r.forEach(c=>{if(c)dark++;})); p+=Math.floor(Math.abs(dark*20-size*size*10)/(size*size))*10;
+      return p;
+    };
+    let best=null,bp=1e9;
+    for(let mk=0;mk<8;mk++){
+      for(let y=0;y<size;y++)for(let x=0;x<size;x++) M[y][x]=F[y][x]?base[y][x]:(base[y][x]!==MASK[mk](y,x));
+      fmt(mk); const pn=penalty(M); if(pn<bp){bp=pn;best=M.map(r=>r.slice());}
+    }
+    return best;
+  }
+  function make(text){
+    const bytes=Array.from(new TextEncoder().encode(String(text)));
+    for(const e of ["M","L"]) for(let v=1;v<=10;v++){
+      const need=4+(v<10?8:16)+8*bytes.length;
+      if(need<=dataCap(v,e)*8) return matrix(build(bytes,v,e),v,e);
+    }
+    return null;
+  }
+  // Devuelve un <svg> listo para insertar (o "" si el texto es demasiado largo).
+  function svg(text,px=176){
+    const m=make(text); if(!m) return "";
+    const n=m.length, q=4; let d="";
+    m.forEach((row,y)=>row.forEach((c,x)=>{if(c) d+=`M${x+q} ${y+q}h1v1h-1z`;}));
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n+2*q} ${n+2*q}" width="${px}" height="${px}" role="img" aria-label="Código QR" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  }
+  return {svg,make};
+})();
 
 document.addEventListener("DOMContentLoaded",bind);
