@@ -492,6 +492,25 @@ function renderBuilderPreview(){
     options:builderOptions.map(o=>({...o,hasWarranty:o.hasWarranty&&!!String(o.warranty).trim(),installments:Number(o.installments)||2,recommended:o.recommended&&builderOptions.length>1}))
   };
   $("#builderPreview").innerHTML=publicProposalMarkup(p,"preview");
+  renderStrength(p);
+}
+// Guía de cierre: solo mira lo que ya cargaste y sugiere lo que más ayuda a vender.
+function renderStrength(p){
+  const host=$("#builderPreview"); if(!host) return;
+  let box=$("#proposalStrength"); if(!box){host.insertAdjacentHTML("beforebegin",'<div class="strength" id="proposalStrength" aria-live="polite"></div>'); box=$("#proposalStrength");}
+  const multi=p.options.length>1, b=state.business||{}, O=p.options;
+  const checks=[
+    [!multi||O.some(o=>o.recommended),"Marcá una opción como recomendada","Cuando hay varias, elegir una guía al cliente y evita que postergue."],
+    [p.depositPct>0,"Pedí una seña","Una seña convierte el \"me interesa\" en un compromiso."],
+    [O.some(o=>o.why||o.photo),"Sumá una foto o el \"por qué la recomiendo\"","Una línea personal hace que se sienta atendido, no un presupuesto más."],
+    [O.some(o=>(o.hasInstallments&&o.installments>1)||(Number(o.discountValue)||0)>0)||p.cashDiscount>0,"Ofrecé cuotas o un descuento","Le da una razón concreta para decidir hoy."],
+    [!!(p.bonusText||p.slotsLeft>0),"Agregá un bonus por reservar a tiempo o cupos reales","Solo si es verdad: una fecha límite concreta ayuda a decidir."],
+    [O.some(o=>o.hasWarranty),"Indicá la garantía","Reduce el miedo a equivocarse."],
+    [faqItems(b).length>0,"Cargá preguntas frecuentes en Configuración","Responde las dudas antes de que se las lleve a otro lado."],
+    [daysLeft(p)<=10,"Poné un vencimiento más corto (hasta 10 días)","Un plazo claro evita que la propuesta se enfríe."]
+  ];
+  const ok=checks.filter(c=>c[0]).length, pct=Math.round(100*ok/checks.length), miss=checks.filter(c=>!c[0]).slice(0,3);
+  box.innerHTML=`<div class="strength-head"><b>Fuerza de la propuesta</b><span>${ok} de ${checks.length}</span></div><div class="strength-bar" role="img" aria-label="${pct}% completo"><i style="width:${pct}%"></i></div>${miss.length?`<ul>${miss.map(c=>`<li><b>${c[1]}</b><small>${c[2]}</small></li>`).join("")}</ul>`:'<p class="strength-ok">¡Muy buena! Tiene todo lo que ayuda a cerrar.</p>'}`;
 }
 
 function openBuilder(){
@@ -728,6 +747,7 @@ function todayItems(){
     const last=Math.max(new Date(p.lastViewedAt||p.createdAt).getTime(),p.lastFollowUpAt||0), h=(now-last)/36e5;
     let reason=null, prio=9;
     if(p.status==="expired"){reason="⛔ Venció: renovala y volvé a escribirle.";prio=1;}
+    else if(p.doubts&&!p.lastFollowUpAt){reason=`🙋 Tiene una duda${p.lastDoubt?` (${p.lastDoubt})`:""} y nadie le respondió.`;prio=1;}
     else if(bonusActive(p)&&bonusDeadline(p)-now<12*36e5){reason=`🎁 El bonus vence en ${fmtLeft(bonusDeadline(p)-now)}: avisale.`;prio=2;}
     else if(daysLeft(p)<=2){reason=`⏳ ${expiryText(p)}.`;prio=2;}
     else if(p.chosenOption&&h>=6){reason=`⭐ Eligió una opción y no aceptó (hace ${hTxt(h)}).`;prio=2;}
@@ -792,6 +812,16 @@ function followMsg(p){
   if(p.status==="accepted"&&p.payExitAt&&!p.proofSentAt&&!p.depositPaidAt) return `Hola ${first} 👋 ¿Te ayudo con la transferencia? Si te trabaste con algún paso o con los datos, decime y lo resolvemos ahora.${p.depositPct>0?` La seña es ${dep}.`:""}`;
   if(p.status==="accepted") return `Hola ${first} 👋 ¡Gracias por aceptar! Para dejarte reservado queda la seña de ${dep}. Si ya la hiciste, mandame el comprobante y lo confirmo: ${link}`;
   if(p.status==="expired") return `Hola ${first} 👋 Tu propuesta venció el ${vig}. Si querés, te la actualizo hoy y retomamos: ${link}`;
+  if(p.remindAt&&p.remindAt<=Date.now()) return `Hola ${first} 👋 Como quedamos, te escribo hoy por "${p.title}". ¿Pudiste pensarlo? Si querés avanzar, te lo dejo reservado.${bn} ${link}`;
+  if((p.followUps||0)<3&&p.lastDoubt){
+    const cuotas=p.options.some(x=>x.hasInstallments&&x.installments>1);
+    const byDoubt={
+      "Precio":`Vi que te quedó una duda con el precio. ${p.options.length>1?"Si querés, te ayudo a elegir la opción que mejor se ajuste a lo que necesitás.":"Contame qué te preocupa y vemos cómo acomodarlo."}`,
+      "Forma de pago":`Vi que consultaste por la forma de pago. Te explico cómo es: ${p.depositPct>0?`reservás con la seña de ${dep} y el resto lo coordinamos`:"lo coordinamos como te quede cómodo"}${cuotas?", y hay opción en cuotas":""}.`,
+      "Plazo o fecha":"Vi que te preocupa el plazo. Decime qué fecha te sirve y veo si llegamos.",
+      "Otra consulta":"Vi que tenías una consulta. Preguntame lo que quieras y te respondo enseguida."};
+    if(byDoubt[p.lastDoubt]) return `Hola ${first} 👋 ${byDoubt[p.lastDoubt]}${bn} ${link}`;
+  }
   if((p.followUps||0)>=3) return `Hola ${first}, no quiero molestarte 🙂 Dejo la propuesta disponible hasta el ${vig} por si querés retomarla más adelante: ${link}`;
   if(p.chosenOption) return `Hola ${first} 👋 Vi que elegiste ${o.name} (${tot}).${p.depositPct>0?` La seña es ${dep}.`:""} ¿Avanzamos y te lo dejo reservado?${bn} ${link}`;
   if(daysLeft(p)<=2) return `Hola ${first} 👋 Aviso rápido: ${expiryText(p).toLowerCase()}. ¿Avanzamos para que no pierdas el precio?${bn} ${link}`;
