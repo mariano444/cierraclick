@@ -1075,14 +1075,14 @@ document.addEventListener("click",e=>{
 function getReviews(){
   const b=state.business||{};
   if(Array.isArray(b.reviews)&&b.rating) return {avg:Number(b.rating.avg)||0,count:Number(b.rating.count)||0,
-    list:b.reviews.map(r=>({stars:r.stars,comment:r.comment,author:r.author,source:r.source,at:r.created_at?new Date(r.created_at).getTime():(r.at||0)}))};
-  const rs=[...(state.proposals||[]).filter(p=>p.review&&p.review.stars).map(p=>({stars:p.review.stars,comment:p.review.comment||"",author:(p.client.name||"").split(" ")[0],source:"proposal",at:p.review.at||0})),...(state.extReviews||[]).map(r=>({...r,source:"external"}))];
+    list:b.reviews.map(r=>({stars:r.stars,comment:r.comment,photo:r.photo||"",author:r.author,source:r.source,at:r.created_at?new Date(r.created_at).getTime():(r.at||0)}))};
+  const rs=[...(state.proposals||[]).filter(p=>p.review&&p.review.stars).map(p=>({stars:p.review.stars,comment:p.review.comment||"",photo:p.review.photo||"",author:firstName(p.client.name),source:"proposal",at:p.review.at||0})),...(state.extReviews||[]).map(r=>({...r,source:"external"}))];
   const c=rs.length;
   return {avg:c?rs.reduce((x,r)=>x+r.stars,0)/c:0,count:c,list:rs.filter(r=>r.comment).sort((x,y)=>y.at-x.at).slice(0,8)};
 }
 function ratingChip(){const r=getReviews(); return r.count?`<span class="rating-chip">★ ${fmtAvg(r.avg)} · ${r.count} ${r.count>1?"opiniones":"opinión"}</span>`:"";}
 const reviewCard=r=>{const nm=(r.author||"Cliente").trim()||"Cliente";
-  return `<figure class="review"><div class="review-top"><span class="review-av" aria-hidden="true">${escapeHtml(nm.charAt(0).toUpperCase())}</span><div><div class="review-stars" role="img" aria-label="${Number(r.stars)||0} de 5 estrellas">${stars(r.stars)}</div><figcaption>${escapeHtml(nm)}<small>${r.source==="external"?"Cliente del negocio":"Cliente verificado"}</small></figcaption></div></div>${r.comment?`<blockquote>${escapeHtml(r.comment)}</blockquote>`:""}</figure>`;};
+  return `<figure class="review"><div class="review-top"><span class="review-av${safeImg(r.photo)?" has-photo":""}" aria-hidden="true">${safeImg(r.photo)?`<img src="${safeImg(r.photo)}" alt="" loading="lazy">`:escapeHtml(nm.charAt(0).toUpperCase())}</span><div><div class="review-stars" role="img" aria-label="${Number(r.stars)||0} de 5 estrellas">${stars(r.stars)}</div><figcaption>${escapeHtml(nm)}<small>${r.source==="external"?"Cliente del negocio":"Cliente verificado"}</small></figcaption></div></div>${r.comment?`<blockquote>${escapeHtml(r.comment)}</blockquote>`:""}</figure>`;};
 const revRow=list=>`<div class="rev-row" tabindex="0" role="group" aria-label="Opiniones de clientes">${list.map(reviewCard).join("")}</div>`;
 function reviewsMarkup(){
   const r=getReviews(); if(!r.count) return "";
@@ -1096,17 +1096,24 @@ function reviewsPanel(){
 function renderPerfExtras(){renderPerfExtrasBase(); const box=$("#perfExtras"); if(box) box.insertAdjacentHTML("beforeend",reviewsPanel());}
 async function loadReviews(){
   if(!Cloud.on||!currentUser) return;
-  try{const sb=await Auth.client(); const {data}=await sb.from("business_reviews").select("stars,comment,author,source,status,created_at").order("created_at",{ascending:false}).limit(100);
+  try{const sb=await Auth.client(); const q=c=>sb.from("business_reviews").select(c).order("created_at",{ascending:false}).limit(100);
+    let {data,error}=await q("stars,comment,author,source,status,created_at,photo"); if(error) ({data}=await q("stars,comment,author,source,status,created_at"));
     const rows=data||[], pub=rows.filter(r=>r.status==="published"), c=pub.length;
     state.business.rating={avg:c?pub.reduce((x,r)=>x+r.stars,0)/c:0,count:c};
     state.business.reviews=pub.filter(r=>r.comment).slice(0,8); state.business.pendingReviews=rows.length-c;}catch(e){}
 }
 function reviewFormMarkup(p){
   const rv=p.review, bn=escapeHtml(state.business.name||"el negocio");
-  if(rv&&rv.stars&&!p._editReview) return `<section class="review-box" id="reviewBox"><h4>Tu opinión</h4><div class="review-stars big">${stars(rv.stars)}</div>${rv.comment?`<p>“${escapeHtml(rv.comment)}”</p>`:""}${p._token?"":'<button type="button" class="text-btn" id="reviewEdit">Editar mi opinión</button>'}</section>`;
+  if(rv&&rv.stars&&!p._editReview) return `<section class="review-box" id="reviewBox"><h4>Tu opinión</h4>${safeImg(rv.photo)?`<span class="rv-avatar"><img src="${safeImg(rv.photo)}" alt="Tu foto"></span>`:""}<div class="review-stars big">${stars(rv.stars)}</div>${rv.comment?`<p>“${escapeHtml(rv.comment)}”</p>`:""}${p._token?"":'<button type="button" class="text-btn" id="reviewEdit">Editar mi opinión</button>'}</section>`;
   return `<section class="review-box" id="reviewBox"><h4>Dejá tu opinión sobre ${bn}</h4><p class="tool-sub">Ayuda a otras personas a decidir. Es opcional.</p>
     <div class="star-pick" role="radiogroup" aria-label="Calificación">${[1,2,3,4,5].map(n=>`<button type="button" class="star-btn ${rv&&rv.stars>=n?"on":""}" data-star="${n}" role="radio" aria-label="${n} estrella${n>1?"s":""}">★</button>`).join("")}</div>
     <textarea id="reviewText" rows="3" maxlength="500" placeholder="Contá cómo fue tu experiencia (opcional)">${escapeHtml(rv?rv.comment||"":"")}</textarea>
+    <div class="rv-photo"><span class="rv-avatar" id="rvAvatar">${safeImg(p._rvPhoto)?`<img src="${safeImg(p._rvPhoto)}" alt="Tu foto">`:"👤"}</span>
+      <div class="rv-photo-actions"><b>Tu foto (opcional)</b><div>
+        <label class="btn btn-secondary btn-sm">📷 Sacarme una foto<input type="file" accept="image/*" capture="user" data-rvphoto hidden></label>
+        <label class="btn btn-secondary btn-sm">🖼 Elegir foto<input type="file" accept="image/*" data-rvphoto hidden></label>
+        <button type="button" class="text-btn" id="rvPhotoDel" ${p._rvPhoto?"":"hidden"}>Quitar</button></div>
+        <small>Se muestra junto a tu comentario.</small></div></div>
     <button type="button" class="btn btn-primary" id="reviewSend">Enviar opinión</button></section>`;
 }
 function deviceId(){try{let d=localStorage.getItem("cc_device"); if(!d){d=(crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)+Date.now()); localStorage.setItem("cc_device",d);} return d;}catch(e){return "";}}
@@ -1115,15 +1122,26 @@ function renderReviewBox(p){const box=$("#reviewBox"); if(box){box.outerHTML=rev
 function attachReview(p){
   let sel=p.review?p.review.stars:0;
   $$("[data-star]").forEach(b=>b.addEventListener("click",()=>{sel=Number(b.dataset.star); $$("[data-star]").forEach(x=>x.classList.toggle("on",Number(x.dataset.star)<=sel));}));
-  $("#reviewEdit")?.addEventListener("click",()=>{p._editReview=true; renderReviewBox(p);});
+  $("#reviewEdit")?.addEventListener("click",()=>{p._editReview=true; p._rvPhoto=(p.review&&p.review.photo)||p._rvPhoto||""; renderReviewBox(p);});
+  const paintRv=()=>{const av=$("#rvAvatar"); if(av) av.innerHTML=safeImg(p._rvPhoto)?`<img src="${safeImg(p._rvPhoto)}" alt="Tu foto">`:"👤"; const d=$("#rvPhotoDel"); if(d) d.hidden=!p._rvPhoto;};
+  $$("[data-rvphoto]").forEach(inp=>inp.addEventListener("change",async()=>{
+    const f=inp.files&&inp.files[0]; if(!f) return;
+    try{p._rvPhoto=await resizeSquare(f,192,.8); paintRv();}catch(err){toast(err.message||"No se pudo leer la foto.");}
+    inp.value="";
+  }));
+  $("#rvPhotoDel")?.addEventListener("click",()=>{p._rvPhoto=""; paintRv();});
   $("#reviewSend")?.addEventListener("click",async()=>{
     if(!sel) return toast("Elegí cuántas estrellas das.");
-    const comment=($("#reviewText").value||"").trim().slice(0,500);
+    const comment=($("#reviewText").value||"").trim().slice(0,500), photo=safeImg(p._rvPhoto);
     try{
-      if(p._token){ if(Cloud.on) await Cloud.rpc("submit_review_request",{p_token:p._token,p_stars:sel,p_comment:comment,p_device:deviceId()}); else localSubmitReq(p._token,sel,comment); }
+      if(p._token){ if(Cloud.on) await Cloud.rpc("submit_review_request",{p_token:p._token,p_stars:sel,p_comment:comment,p_device:deviceId()}); else localSubmitReq(p._token,sel,comment,photo); }
       else if(Cloud.on) await Cloud.rpc("submit_review",{p_id:p.id,p_stars:sel,p_comment:comment,p_device:deviceId()});
     }catch(e){return toast(e.message||"No se pudo enviar tu opinión.");}
-    p.review={stars:sel,comment,at:Date.now()}; p._editReview=false; if(!p._token) saveState(); toast("¡Gracias por tu opinión!"); renderReviewBox(p);
+    if(Cloud.on){ // la foto va aparte: si falta el SQL nuevo, la opinión igual queda guardada
+      try{await Cloud.rpc("set_review_photo",{p_id:p._token?null:p.id,p_token:p._token||null,p_photo:photo||""});}
+      catch(e){if(photo) toast("Tu opinión se envió, pero la foto no se pudo guardar todavía.");}
+    }
+    p.review={stars:sel,comment,photo,at:Date.now()}; p._editReview=false; if(!p._token) saveState(); toast("¡Gracias por tu opinión!"); renderReviewBox(p);
   });
 }
 function renderAcceptedState(p){
@@ -1133,11 +1151,11 @@ function renderAcceptedState(p){
 }
 /* ===== Pedir opinión (dentro o fuera de la plataforma) ===== */
 const reviewLink=t=>`${location.origin}${location.pathname.replace(/index\.html$/,"")}?r=${t}`;
-function localSubmitReq(t,stars,comment){
+function localSubmitReq(t,stars,comment,photo=""){
   const r=(state.reviewRequests||{})[t]; if(!r||r.used) throw new Error("Este link ya no está disponible");
   r.used=true;
-  if(r.proposalId){const p=state.proposals.find(x=>x.id===r.proposalId); if(p) p.review={stars,comment,at:Date.now()};}
-  else (state.extReviews=state.extReviews||[]).push({stars,comment,author:r.name.split(" ")[0],at:Date.now()});
+  if(r.proposalId){const p=state.proposals.find(x=>x.id===r.proposalId); if(p) p.review={stars,comment,photo,at:Date.now()};}
+  else (state.extReviews=state.extReviews||[]).push({stars,comment,photo,author:r.name.split(" ")[0],at:Date.now()});
   saveState();
 }
 async function createReviewToken(name,phone,proposalId){
