@@ -732,3 +732,16 @@ html.proposal-mode .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 .faq-more:hover{border-color:var(--pc,var(--accent));color:var(--pc,var(--accent))}
 .faq-more::after{content:" ▾"}.faq-more[aria-expanded="true"]::after{content:" ▴"}
 @media (prefers-reduced-motion:reduce){.rev-row{scroll-behavior:auto}}
+
+
+/* ===== v29: fuerza de la propuesta (guía de cierre en el creador) ===== */
+.strength{margin:0 0 12px;padding:14px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.strength-head{display:flex;justify-content:space-between;align-items:center;font-size:14px}
+.strength-head span{font-weight:800;color:var(--accent)}
+.strength-bar{height:8px;margin:8px 0 4px;border-radius:99px;background:#e2e8f0;overflow:hidden}
+.strength-bar i{display:block;height:100%;border-radius:99px;background:var(--accent);transition:width .3s ease}
+.strength ul{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}
+.strength li{padding:10px 12px;border-radius:12px;background:#fffbeb;border:1px solid #fde68a;display:grid;gap:2px}
+.strength li b{font-size:13.5px;color:#92400e}.strength li small{font-size:12.5px;line-height:1.4;color:#78350f}
+.strength-ok{margin:10px 0 0;font-size:13.5px;font-weight:700;color:#14532d}
+@media (prefers-reduced-motion:reduce){.strength-bar i{transition:none}}
