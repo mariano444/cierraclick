@@ -42,7 +42,15 @@ const KINDS={
   service:{title:"Propuesta de servicio",includes:"Instalación\nMateriales principales\nSoporte inicial",ph:"Ej: Servicio completo"}
 };
 const MAX_OPTIONS=4;
-const newOption=(o={})=>({id:`o-${Math.random().toString(36).slice(2,8)}`,name:"",price:0,discountType:"percent",discountValue:0,description:"",hasInstallments:false,installments:3,hasWarranty:false,warranty:"",features:"",terms:"",recommended:false,why:"",photo:"",...o});
+const MAX_PHOTOS=10;
+/* ===== Nombre opcional, saludo según la hora y varias fotos por opción ===== */
+const NO_NAME="Cliente";
+function firstName(n){const f=String(n||"").trim().split(/\s+/)[0]||"";return f===NO_NAME?"":f;}
+function saludoHora(d=new Date()){const h=d.getHours();return h>=6&&h<12?"Buen día":h>=12&&h<20?"Buenas tardes":"Buenas noches";}
+function hello(name){const f=firstName(name);return f?`${saludoHora()}, ${f}`:saludoHora();}
+function soy(p){const n=String((p&&p.client&&p.client.name)||"").trim();return n&&n!==NO_NAME?`Soy ${n}. `:"";}
+function photosOf(o){const l=Array.isArray(o&&o.photos)&&o.photos.length?o.photos:(o&&o.photo?[o.photo]:[]);return l.filter(x=>typeof x==="string"&&x).slice(0,MAX_PHOTOS);}
+const newOption=(o={})=>({id:`o-${Math.random().toString(36).slice(2,8)}`,name:"",price:0,discountType:"percent",discountValue:0,description:"",hasInstallments:false,installments:3,hasWarranty:false,warranty:"",features:"",terms:"",recommended:false,why:"",photo:"",photos:[],...o});
 function discountAmount(o){
   const pr=Number(o.price)||0, v=Math.max(0,Number(o.discountValue)||0);
   return Math.min(pr,o.discountType==="percent"?pr*Math.min(v,100)/100:v);
@@ -182,14 +190,16 @@ const Cloud={
   },
   async publicProposal(id){
     // Las 4 consultas salen a la vez (antes: 1 y después 3), y las extras son opcionales.
-    const [r,x,ox,v3]=await Promise.all([
+    const [r,x,ox,v3,ph]=await Promise.all([
       this.pub("get_public_proposal",{p_id:id}),
       this.pub("get_public_extras",{p_id:id}).catch(()=>null),
       this.pub("get_public_option_extras",{p_id:id}).then(v=>({v}),()=>null),
-      this.pub("get_public_v3",{p_id:id}).catch(()=>null)]);
+      this.pub("get_public_v3",{p_id:id}).catch(()=>null),
+      this.pub("get_public_option_photos",{p_id:id}).catch(()=>null)]);
     if(!r) return r;
     if(x) r.business={...(r.business||{}),...x};
     if(ox){const m=ox.v; if(m&&r.options) r.options.forEach(o=>{const e=m[o.id]; if(e){o.why=e.why;o.photo=e.photo;}}); r._ex=true;}
+    if(ph&&r.options) r.options.forEach(o=>{const l=ph[o.id]; if(Array.isArray(l)&&l.length) o.photos=l;});
     if(v3){applyV3(r,v3); r.business={...(r.business||{}),afterSteps:v3.afterSteps||""};}
     return r;
   }
@@ -312,7 +322,7 @@ function renderOptionEditors(){
           <label class="full">Características (una por línea)<textarea data-field="features" rows="3" placeholder="Ej: Envío gratis&#10;Instalación incluida">${escapeHtml(o.features)}</textarea></label>
           <label class="full">Términos y condiciones de esta opción<textarea data-field="terms" rows="2">${escapeHtml(o.terms)}</textarea></label>
           <label class="full">Por qué la recomiendo / frase para el cliente<input data-field="why" maxlength="300" value="${escapeHtml(o.why||"")}" placeholder="Ej: Es la que mejor relación precio-calidad tiene para tu caso."></label>
-          <div class="photo-field full"><span>Foto de esta opción (opcional)</span>${safeImg(o.photo)?`<img src="${safeImg(o.photo)}" alt="Foto"><button type="button" class="text-btn" data-photo-del>Quitar foto</button>`:`<input type="file" data-photo accept="image/*">`}</div>
+          <div class="photo-field full"><span>Fotos de esta opción (opcional · hasta ${MAX_PHOTOS}) <b class="photo-count">${photosOf(o).length}/${MAX_PHOTOS}</b></span>${photosOf(o).length?`<div class="photo-grid">${photosOf(o).map((ph,pi)=>safeImg(ph)?`<figure><img src="${safeImg(ph)}" alt="Foto ${pi+1}"><button type="button" class="photo-x" data-photo-del="${pi}" aria-label="Quitar foto ${pi+1}">×</button></figure>`:"").join("")}</div>`:""}${photosOf(o).length<MAX_PHOTOS?`<input type="file" data-photo accept="image/*" multiple>`:'<small>Llegaste al máximo. Quitá una para agregar otra.</small>'}</div>
         </div>
       </details>
       <div class="option-total full" data-total>${totalText(o)}</div>
@@ -330,7 +340,7 @@ function renderCatalog(){
 async function saveToCatalog(o){
   const name=String(o.name).trim();
   if(!name) return toast("Poné un nombre para guardarla.");
-  const {id,recommended,_open,...rest}=o;
+  const {id,recommended,_open,photos,...rest}=o;
   const item={...rest,name,kind:builderKind,price:Number(o.price)||0,id:`c-${Math.random().toString(36).slice(2,8)}`};
   const i=state.catalog.findIndex(c=>c.kind===builderKind&&c.name.toLowerCase()===name.toLowerCase());
   if(i>=0) item.id=state.catalog[i].id;
@@ -349,26 +359,40 @@ function onOptionInput(e){
   } else $("[data-total]",row).textContent=totalText(o);
   renderBuilderPreview();
 }
-function resizePhoto(file,max=720,q=.72){
+function resizePhoto(file,max=640,q=.66){
   return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);
     img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
       c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL("image/jpeg",q));};
     img.onerror=()=>rej(new Error("No se pudo leer la imagen."));img.src=u;});
 }
 document.addEventListener("change",async e=>{
-  const t=e.target; if(!t.matches||!t.matches("[data-photo]")||!t.files[0]) return;
+  const t=e.target; if(!t.matches||!t.matches("[data-photo]")||!t.files||!t.files.length) return;
   const row=t.closest("[data-idx]"), o=builderOptions[row.dataset.idx];
-  try{o.photo=await resizePhoto(t.files[0]); o._open=true; renderOptionEditors(); renderBuilderPreview();}catch(err){toast(err.message);}
+  const room=MAX_PHOTOS-photosOf(o).length, files=[...t.files].filter(f=>f.type.startsWith("image/"));
+  if(!files.length) return toast("Elegí archivos de imagen.");
+  if(files.length>room) toast(`Solo entran ${MAX_PHOTOS} fotos por opción: agregué ${room}.`);
+  try{
+    const list=photosOf(o);
+    for(const f of files.slice(0,room)) list.push(await resizePhoto(f));
+    o.photos=list; o.photo=list[0]||""; o._open=true; renderOptionEditors(); renderBuilderPreview();
+  }catch(err){toast(err.message);}
 });
 document.addEventListener("click",e=>{
   const b=e.target.closest&&e.target.closest("[data-photo-del]"); if(!b) return;
-  const o=builderOptions[b.closest("[data-idx]").dataset.idx]; o.photo=""; o._open=true; renderOptionEditors(); renderBuilderPreview();
+  const o=builderOptions[b.closest("[data-idx]").dataset.idx], i=Number(b.dataset.photoDel);
+  const list=photosOf(o); list.splice(i,1); o.photos=list; o.photo=list[0]||""; o._open=true; renderOptionEditors(); renderBuilderPreview();
 });
 async function saveOptionExtras(id,p){
-  if(!p.options.some(o=>o.why||o.photo)) return;
-  try{await Cloud.rpc("set_option_extras",{p_id:id,p_extras:p.options.map(o=>({why:o.why||"",photo:o.photo||""}))});
-    const r=state.proposals.find(x=>x.id===id); if(r) r.options.forEach((o,i)=>{if(p.options[i]){o.why=p.options[i].why;o.photo=p.options[i].photo;}});
+  if(!p.options.some(o=>o.why||photosOf(o).length)) return;
+  try{await Cloud.rpc("set_option_extras",{p_id:id,p_extras:p.options.map(o=>({why:o.why||"",photo:photosOf(o)[0]||""}))});
+    const r=state.proposals.find(x=>x.id===id); if(r) r.options.forEach((o,i)=>{if(p.options[i]){o.why=p.options[i].why;o.photo=photosOf(p.options[i])[0]||"";}});
   }catch(e){toast("La propuesta se creó, pero la foto y la frase no se guardaron: falta ejecutar supabase_fotos.sql.");}
+  // Galería: solo hace falta cuando alguna opción tiene 2 o más fotos.
+  if(p.options.some(o=>photosOf(o).length>1)){
+    try{await Cloud.rpc("set_option_photos",{p_id:id,p_photos:p.options.map(o=>photosOf(o))});
+      const r=state.proposals.find(x=>x.id===id); if(r) r.options.forEach((o,i)=>{if(p.options[i]) o.photos=photosOf(p.options[i]);});
+    }catch(e){toast("Se guardó solo la primera foto de cada opción: falta ejecutar supabase_v4_fotos_nombre.sql en Supabase.");}
+  }
 }
 function setKind(k){
   const prev=KINDS[builderKind];
@@ -380,7 +404,7 @@ function setKind(k){
 function collectBuilderData(){
   const options=builderOptions.map(o=>{
     const warranty=String(o.warranty).trim();
-    return {...o,_open:undefined,
+    return {...o,_open:undefined,photos:photosOf(o),photo:photosOf(o)[0]||"",
       name:String(o.name).trim()||"Opción",
       price:Number(o.price)||0,
       discountValue:Number(o.discountValue)||0,
@@ -392,7 +416,7 @@ function collectBuilderData(){
   return {
     id:`p-${Date.now()}`,
     kind:builderKind,
-    client:{name:$("#clientName").value.trim(),phone:$("#clientPhone").value.trim()},
+    client:{name:$("#clientName").value.trim()||NO_NAME,phone:$("#clientPhone").value.trim()},
     title:$("#proposalTitle").value.trim(),
     validity:"",expiresAt:builderExpiry(),payments:selectedPayments(),cashDiscount:builderCash(),depositPct:builderDep(),
     includes:$("#includes").value.split("\n").map(x=>x.trim()).filter(Boolean),
@@ -413,7 +437,7 @@ function optionMarkup(p,o,mode){
   const feats=(o.features||"").trim()?`<ul class="feat">${o.features.split("\n").map(x=>x.trim()).filter(Boolean).map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul>`:"";
   return `
     <article class="choice ${rec?"recommended":""}" data-choice="${escapeHtml(o.id)}">
-      ${safeImg(o.photo)?`<img class="choice-photo" src="${safeImg(o.photo)}" alt="${escapeHtml(o.name)}" loading="lazy">`:""}
+      ${galleryMarkup(o)}
       <header class="choice-head"><h4>${escapeHtml(o.name)}</h4>${rec?'<span class="tag">⭐ Recomendada</span>':""}</header>
       <div class="choice-price">
         ${d>0?`<div class="price-row"><span class="price-old">${money(o.price)}</span><span class="disc">${badge}</span></div>`:""}
@@ -448,13 +472,29 @@ function assuranceMarkup(p){
     ${war.length?`<div class="assure-item"><b>🛡️ Garantía</b><p>${war.map(o=>`${escapeHtml(o.name)}: ${escapeHtml(o.warranty)}`).join(" · ")}</p></div>`:""}
     ${faqMarkup(items)}</section>`;
 }
+function galleryMarkup(o){
+  const l=photosOf(o).map(safeImg).filter(Boolean), nm=escapeHtml(o.name);
+  if(!l.length) return "";
+  if(l.length===1) return `<img class="choice-photo" src="${l[0]}" alt="${nm}" loading="lazy">`;
+  return `<div class="choice-gallery" role="group" aria-label="Fotos de ${nm}"><div class="gal-track" tabindex="0">${l.map((s,i)=>`<img src="${s}" alt="${nm} · foto ${i+1} de ${l.length}" loading="lazy">`).join("")}</div><button type="button" class="gal-nav prev" data-gal="-1" aria-label="Foto anterior">‹</button><button type="button" class="gal-nav next" data-gal="1" aria-label="Foto siguiente">›</button><span class="gal-count" aria-hidden="true">1/${l.length}</span></div>`;
+}
+document.addEventListener("scroll",e=>{
+  const t=e.target; if(!t||!t.classList||!t.classList.contains("gal-track")) return;
+  const i=Math.round(t.scrollLeft/Math.max(1,t.clientWidth)), c=t.parentElement.querySelector(".gal-count");
+  if(c) c.textContent=`${Math.min(i+1,t.children.length)}/${t.children.length}`;
+},true);
+document.addEventListener("click",e=>{
+  const b=e.target.closest&&e.target.closest("[data-gal]"); if(!b) return;
+  const tr=b.parentElement.querySelector(".gal-track"); if(!tr) return;
+  tr.scrollBy({left:Number(b.dataset.gal)*tr.clientWidth,behavior:matchMedia("(prefers-reduced-motion:reduce)").matches?"auto":"smooth"});
+});
 function publicProposalMarkup(p, mode="full"){
   const multi=p.options.length>1;
   const includes=(p.includes||[]).map(x=>`<div class="include">✓ ${escapeHtml(x)}</div>`).join("");
   return `
     <div class="public-card" data-public-id="${escapeHtml(p.id)}" style="--pc:${brandStyle()}">
       <div class="public-brand">${avatarHtml()}${escapeHtml(state.business.name).toUpperCase()}${ratingChip()}</div>
-      <div class="public-greeting">Hola ${escapeHtml(firstName(p.client.name))} 👋</div>
+      <div class="public-greeting">${escapeHtml(hello(p.client.name))} 👋</div>
       <div class="public-title">${escapeHtml(p.title)}</div>
       ${mode==="full"?`<span class="valid">${expiryLine(p)}</span>`:""}
       ${p.status!=="expired"?voiceMarkup(p):""}
@@ -489,7 +529,7 @@ function renderBuilderPreview(){
   updatePriceTip();
   const p = {
     kind:builderKind,
-    client:{name:$("#clientName").value||"Juan Pérez"},
+    client:{name:$("#clientName").value.trim()||NO_NAME},
     title:$("#proposalTitle").value||KINDS[builderKind].title,
     expiresAt:builderExpiry(),payments:selectedPayments(),cashDiscount:builderCash(),depositPct:builderDep(),
     includes:$("#includes").value.split("\n").map(x=>x.trim()).filter(Boolean),
@@ -508,7 +548,7 @@ function renderStrength(p){
   const checks=[
     [!multi||O.some(o=>o.recommended),"Marcá una opción como recomendada","Cuando hay varias, elegir una guía al cliente y evita que postergue."],
     [p.depositPct>0,"Pedí una seña","Una seña convierte el \"me interesa\" en un compromiso."],
-    [O.some(o=>o.why||o.photo),"Sumá una foto o el \"por qué la recomiendo\"","Una línea personal hace que se sienta atendido, no un presupuesto más."],
+    [O.some(o=>o.why||photosOf(o).length),"Sumá una foto o el \"por qué la recomiendo\"","Una línea personal hace que se sienta atendido, no un presupuesto más."],
     [O.some(o=>(o.hasInstallments&&o.installments>1)||(Number(o.discountValue)||0)>0)||p.cashDiscount>0,"Ofrecé cuotas o un descuento","Le da una razón concreta para decidir hoy."],
     [!!(p.bonusText||p.slotsLeft>0),"Agregá un bonus por reservar a tiempo o cupos reales","Solo si es verdad: una fecha límite concreta ayuda a decidir."],
     [O.some(o=>o.hasWarranty),"Indicá la garantía","Reduce el miedo a equivocarse."],
@@ -529,7 +569,7 @@ function openBuilder(){
 async function createProposal(e){
   e.preventDefault();
   const p=collectBuilderData();
-  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined,bonusText:undefined,bonusHours:undefined,slotsLeft:undefined,slotsLabel:undefined,voice:undefined,holdHours:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);await saveProposalExtras(id,p);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
+  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,options:p.options.map(({photo,photos,...o})=>o),id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined,bonusText:undefined,bonusHours:undefined,slotsLeft:undefined,slotsLabel:undefined,voice:undefined,holdHours:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);await saveProposalExtras(id,p);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
   state.proposals.unshift(p);
   const existing=state.clients.find(c=>c.phone===p.client.phone);
   if(existing) existing.proposals+=1;
@@ -558,7 +598,8 @@ async function openPublicLink(id){
 async function openPublic(id,preview=false,quiet=false){
   if(Cloud.on&&!preview){try{const remote=await Cloud.publicProposal(id);if(!remote)return toast("No se encontró la propuesta.");const p={...remote,createdAt:remote.createdAt||new Date().toISOString()};state.business={...state.business,...remote.business};state.proposals=[p,...state.proposals.filter(x=>x.id!==id)];Cloud.pub("track_proposal",{p_id:id,p_type:"view"}).catch(()=>{});return openPublic(id,true,true);}catch(e){return toast(e.message||"No se pudo abrir la propuesta.");}}
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
-  if(Cloud.on&&currentUser&&!p._ex){p._ex=true;try{const ox=await Cloud.rpc("get_public_option_extras",{p_id:id});(p.options||[]).forEach(o=>{const x=ox&&ox[o.id];if(x){o.why=x.why;o.photo=x.photo;}});}catch(e){}}
+  if(Cloud.on&&currentUser&&!p._ex){p._ex=true;try{const ox=await Cloud.rpc("get_public_option_extras",{p_id:id});(p.options||[]).forEach(o=>{const x=ox&&ox[o.id];if(x){o.why=x.why;o.photo=x.photo;}});}catch(e){}
+    try{const ph=await Cloud.rpc("get_public_option_photos",{p_id:id});(p.options||[]).forEach(o=>{const l=ph&&ph[o.id];if(Array.isArray(l)&&l.length)o.photos=l;});}catch(e){}}
   if(Cloud.on&&currentUser&&!p._v3){p._v3=true;try{const v=await Cloud.rpc("get_public_v3",{p_id:id});if(v)applyV3(p,v);}catch(e){}}
   currentProposalId=id;
   if(!preview){
@@ -571,7 +612,7 @@ async function openPublic(id,preview=false,quiet=false){
   $("#publicContent").innerHTML=publicProposalMarkup(p,"full");
   if(PROPOSAL_MODE) document.title=`${p.title} · ${state.business.name||"CierraClick"}`;
   const sel=chosenOf(p);
-  $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Quiero consultar la propuesta de ${p.client.name} por ${money(finalPrice(sel))}.`)}`;
+  $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`${saludoHora()}, ${state.business.name} 👋 Quiero consultar la propuesta${firstName(p.client.name)?` de ${p.client.name}`:""} por ${money(finalPrice(sel))}.`)}`;
   markSelected(sel.id);
   openModal("publicModal");
   initChoiceCarousel();
@@ -588,13 +629,13 @@ function attachPublicEvents(p){
     if(sum){sum.hidden=false;sum.innerHTML=`<b>${escapeHtml(o.name)}</b> · ${money(finalPrice(o))}${p.depositPct>0?` · Seña ${money(depositOf(p,o))}`:""}${o.hasInstallments&&o.installments>1?` · ${o.installments} cuotas`:""}`;}
     const as=$("#acceptSum"); if(as){const dep=depositOf(p,o); as.innerHTML=`Elegiste <b>${escapeHtml(o.name)}</b> por <b>${money(finalPrice(o))}</b>.${p.depositPct>0?` Seña para reservar: <b>${money(dep)}</b> · saldo ${money(finalPrice(o)-dep)}.`:""}${bonusActive(p)?` 🎁 Incluye el bonus: ${escapeHtml(p.bonusText)}.`:""}`;}
     const at=$("#acceptTermsText"); if(at) at.textContent=[o.terms,p.conditions].filter(x=>x&&String(x).trim()).join("\n\n")||"Esta propuesta no tiene condiciones adicionales.";
-    $$("[data-doubt]").forEach(a=>{a.href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Soy ${p.client.name}. Tengo una duda sobre "${p.title}" (${o.name}, ${money(finalPrice(o))}): ${a.dataset.doubt}.`)}`;});};
+    $$("[data-doubt]").forEach(a=>{a.href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`${saludoHora()}, ${state.business.name} 👋 ${soy(p)}Tengo una duda sobre "${p.title}" (${o.name}, ${money(finalPrice(o))}): ${a.dataset.doubt}.`)}`;});};
   upd(); if(p.options.length>1) markSelected(chosenOf(p).id);
   $("#remindBtn")?.addEventListener("click",()=>{
     p.remindAt=Date.now()+864e5; p.lastEvent="Pidió que le recuerden mañana.";
     state.activity.unshift({icon:"⏰",text:`${p.client.name} pidió que le recuerdes mañana.`,time:"Ahora"}); saveState();
     toast("Listo, le avisamos a "+(state.business.name||"tu vendedor")+". Te escribirán mañana.");
-    window.open(`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Soy ${p.client.name}. Lo estoy pensando con "${p.title}". ¿Me escribís mañana para retomarlo?`)}`,"_blank","noopener");
+    window.open(`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`${saludoHora()}, ${state.business.name} 👋 ${soy(p)}Lo estoy pensando con "${p.title}". ¿Me escribís mañana para retomarlo?`)}`,"_blank","noopener");
   });
   $("#shareBtn")?.addEventListener("click",async()=>{
     const url=shareLink(p), text=`Mirá esta propuesta de ${state.business.name}: ${p.title}`;
@@ -613,7 +654,7 @@ function attachPublicEvents(p){
       saveState(); if(Cloud.on) Cloud.rpc("track_proposal",{p_id:p.id,p_type:"select",p_option:id}).catch(()=>toast("No se pudo guardar la elección."));
       markSelected(id); upd(); celebratePick(id);
       const chosen=p.options.find(x=>x.id===id);
-      $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Quiero avanzar con ${chosen.name} por ${money(finalPrice(chosen))}.`)}`;
+      $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`${saludoHora()}, ${state.business.name} 👋 Quiero avanzar con ${chosen.name} por ${money(finalPrice(chosen))}.`)}`;
       toast(`Elegiste ${chosen.name}.`);
     });
   });
@@ -656,7 +697,7 @@ function renderAcceptedStateBase(p){
   $("#publicContent").innerHTML=`
     <div class="public-card" style="--pc:${brandStyle()}">
       <div class="public-brand">${avatarHtml()}${e(state.business.name).toUpperCase()}${ratingChip()}</div>
-      <div class="public-greeting">${paid?"¡Reserva confirmada!":`¡Listo, ${e(first)}!`} ✅</div>
+      <div class="public-greeting">${paid?"¡Reserva confirmada!":(first?`¡Listo, ${e(first)}!`:"¡Listo!")} ✅</div>
       <p class="pay-lead">${lead}</p>
       <p class="pay-choice">Tu elección: <strong>${e(option.name)}</strong> · ${money(fin)}</p>
       ${p.acceptedName?`<p class="accepted-by">Aceptada por <b>${e(p.acceptedName)}</b>${p.termsAcceptedAt?" · condiciones aceptadas":""}</p>`:""}${bonusWonMarkup(p)}
@@ -667,7 +708,7 @@ function renderAcceptedStateBase(p){
       <div class="public-actions">
         ${mainAction}
         <button class="public-whatsapp" id="receiptBtn" type="button">📄 Descargar constancia</button>
-        <a class="public-whatsapp" href="https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola ${state.business.name} 👋 Acepté la propuesta y quiero avanzar con la seña.`)}" target="_blank" rel="noopener">Escribir al vendedor</a>
+        <a class="public-whatsapp" href="https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`${saludoHora()}, ${state.business.name} 👋 Acepté la propuesta y quiero avanzar con la seña.`)}" target="_blank" rel="noopener">Escribir al vendedor</a>
       </div>
     </div>`;
   $("#receiptBtn")?.addEventListener("click",()=>printReceipt(p.id));
@@ -675,7 +716,7 @@ function renderAcceptedStateBase(p){
   $("#proofBtn")?.addEventListener("click",()=>{
     p.proofSentAt=Date.now(); p.lastEvent="Cliente avisó que transfirió la seña.";
     state.activity.unshift({icon:"💸",text:`${p.client.name} avisó que transfirió la seña.`,time:"Ahora"}); saveState(); if(Cloud.on) Cloud.rpc("report_deposit_transfer",{p_id:p.id}).catch(()=>toast("No se pudo registrar el aviso."));
-    window.open(`https://wa.me/${normalizePhone(b.whatsapp)}?text=${encodeURIComponent(`Hola ${b.name} 👋 Soy ${p.client.name}. Ya transferí la seña${dep?` de ${money(dep)}`:""} por "${p.title}" (${option.name}). Te mando el comprobante por acá.`)}`,"_blank","noopener");
+    window.open(`https://wa.me/${normalizePhone(b.whatsapp)}?text=${encodeURIComponent(`${saludoHora()}, ${b.name} 👋 ${soy(p)}Ya transferí la seña${dep?` de ${money(dep)}`:""} por "${p.title}" (${option.name}). Te mando el comprobante por acá.`)}`,"_blank","noopener");
     toast("Adjuntá el comprobante en el chat de WhatsApp.");
   });
   $("#depositLink")?.addEventListener("click",()=>{p._payClicked=true;p.depositStarted=(p.depositStarted||0)+1;saveState();if(Cloud.on)Cloud.rpc("track_proposal",{p_id:p.id,p_type:"deposit_click"}).catch(()=>{});});
@@ -686,7 +727,7 @@ function renderAcceptedStateBase(p){
 
 function renderGreeting(){
   const n=String((currentUser&&state.business.name)||"").trim(), el=$("#greeting");
-  if(el) el.textContent=n&&n!=="CierraClick Demo"?`Hola, ${n} 👋`:"Hola 👋";
+  if(el) el.textContent=n&&n!=="CierraClick Demo"?`${saludoHora()}, ${n} 👋`:`${saludoHora()} 👋`;
 }
 let _engBoot=false;
 function renderDashboard(){
@@ -773,7 +814,7 @@ async function renewProposal(id){
 function duplicateProposal(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
   openBuilder();
-  $("#clientName").value=p.client.name; $("#clientPhone").value=p.client.phone;
+  $("#clientName").value=p.client.name===NO_NAME?"":p.client.name; $("#clientPhone").value=p.client.phone;
   $("#proposalTitle").value=p.title; $("#includes").value=(p.includes||[]).join("\n"); $("#conditions").value=p.conditions||"";
   $("#cashDiscount").value=p.cashDiscount||0; $("#depositPct").value=p.depositPct||0;
   $("#bonusText").value=p.bonusText||""; $("#bonusHours").value=p.bonusHours||48; $("#slotsLeft").value=p.slotsLeft??""; $("#slotsLabel").value=p.slotsLabel||""; $("#holdHours").value=p.holdHours||"";
@@ -795,9 +836,9 @@ function printReceipt(id){
 // ===== Compartir: link y mensaje persuasivo (la vista previa la arma functions/index.js) =====
 function shareLink(p){return `${location.origin}${location.pathname.replace(/index\.html$/,"")}?p=${encodeURIComponent(p.id)}`;}
 function shareText(p){
-  const first=p.client.name.split(" ")[0], d=daysLeft(p), multi=p.options.length>1;
+  const first=firstName(p.client.name), d=daysLeft(p), multi=p.options.length>1;
   const when=d<=0?"Vence hoy":d===1?"Vence mañana":`Vigente hasta el ${fmtDate(p.expiresAt)}`;
-  return `Hola ${first} 👋 Te armé tu propuesta de ${state.business.name}: ${multi?"elegí la opción que más te sirva":"revisá el detalle"}${p.depositPct>0?` y reservá con una seña del ${p.depositPct}%`:""}. ${when}.${perksText(p)} 👇\n${shareLink(p)}`;
+  return `${hello(first)} 👋 Te armé tu propuesta de ${state.business.name}: ${multi?"elegí la opción que más te sirva":"revisá el detalle"}${p.depositPct>0?` y reservá con una seña del ${p.depositPct}%`:""}. ${when}.${perksText(p)} 👇\n${shareLink(p)}`;
 }
 // Seguimiento por WhatsApp con un toque (propuestas enviadas o vistas sin aceptar)
 function leadScore(p){
@@ -812,13 +853,13 @@ function leadScore(p){
   return Math.max(0,Math.min(100,sc));
 }
 function followMsg(p){
-  const first=p.client.name.split(" ")[0], link=shareLink(p), o=chosenOf(p), tot=money(finalPrice(o));
+  const first=firstName(p.client.name), link=shareLink(p), o=chosenOf(p), tot=money(finalPrice(o));
   const dep=p.depositPct>0?money(depositOf(p,o)):tot, vig=fmtDate(p.expiresAt), bn=bonusActive(p)?` 🎁 Si avanzás antes del ${fmtDateTime(bonusDeadline(p))}: ${p.bonusText}.`:"";
-  if(p.status==="lost") return `Hola ${first} 👋 Hace unos días hablamos de "${p.title}". ¿Retomamos? Si algo cambió, te lo ajusto.`;
-  if(p.status==="accepted"&&p.payExitAt&&!p.proofSentAt&&!p.depositPaidAt) return `Hola ${first} 👋 ¿Te ayudo con la transferencia? Si te trabaste con algún paso o con los datos, decime y lo resolvemos ahora.${p.depositPct>0?` La seña es ${dep}.`:""}`;
-  if(p.status==="accepted") return `Hola ${first} 👋 ¡Gracias por aceptar! Para dejarte reservado queda la seña de ${dep}. Si ya la hiciste, mandame el comprobante y lo confirmo: ${link}`;
-  if(p.status==="expired") return `Hola ${first} 👋 Tu propuesta venció el ${vig}. Si querés, te la actualizo hoy y retomamos: ${link}`;
-  if(p.remindAt&&p.remindAt<=Date.now()) return `Hola ${first} 👋 Como quedamos, te escribo hoy por "${p.title}". ¿Pudiste pensarlo? Si querés avanzar, te lo dejo reservado.${bn} ${link}`;
+  if(p.status==="lost") return `${hello(first)} 👋 Hace unos días hablamos de "${p.title}". ¿Retomamos? Si algo cambió, te lo ajusto.`;
+  if(p.status==="accepted"&&p.payExitAt&&!p.proofSentAt&&!p.depositPaidAt) return `${hello(first)} 👋 ¿Te ayudo con la transferencia? Si te trabaste con algún paso o con los datos, decime y lo resolvemos ahora.${p.depositPct>0?` La seña es ${dep}.`:""}`;
+  if(p.status==="accepted") return `${hello(first)} 👋 ¡Gracias por aceptar! Para dejarte reservado queda la seña de ${dep}. Si ya la hiciste, mandame el comprobante y lo confirmo: ${link}`;
+  if(p.status==="expired") return `${hello(first)} 👋 Tu propuesta venció el ${vig}. Si querés, te la actualizo hoy y retomamos: ${link}`;
+  if(p.remindAt&&p.remindAt<=Date.now()) return `${hello(first)} 👋 Como quedamos, te escribo hoy por "${p.title}". ¿Pudiste pensarlo? Si querés avanzar, te lo dejo reservado.${bn} ${link}`;
   if((p.followUps||0)<3&&p.lastDoubt){
     const cuotas=p.options.some(x=>x.hasInstallments&&x.installments>1);
     const byDoubt={
@@ -826,14 +867,14 @@ function followMsg(p){
       "Forma de pago":`Vi que consultaste por la forma de pago. Te explico cómo es: ${p.depositPct>0?`reservás con la seña de ${dep} y el resto lo coordinamos`:"lo coordinamos como te quede cómodo"}${cuotas?", y hay opción en cuotas":""}.`,
       "Plazo o fecha":"Vi que te preocupa el plazo. Decime qué fecha te sirve y veo si llegamos.",
       "Otra consulta":"Vi que tenías una consulta. Preguntame lo que quieras y te respondo enseguida."};
-    if(byDoubt[p.lastDoubt]) return `Hola ${first} 👋 ${byDoubt[p.lastDoubt]}${bn} ${link}`;
+    if(byDoubt[p.lastDoubt]) return `${hello(first)} 👋 ${byDoubt[p.lastDoubt]}${bn} ${link}`;
   }
-  if((p.followUps||0)>=3) return `Hola ${first}, no quiero molestarte 🙂 Dejo la propuesta disponible hasta el ${vig} por si querés retomarla más adelante: ${link}`;
-  if(p.chosenOption) return `Hola ${first} 👋 Vi que elegiste ${o.name} (${tot}).${p.depositPct>0?` La seña es ${dep}.`:""} ¿Avanzamos y te lo dejo reservado?${bn} ${link}`;
-  if(daysLeft(p)<=2) return `Hola ${first} 👋 Aviso rápido: ${expiryText(p).toLowerCase()}. ¿Avanzamos para que no pierdas el precio?${bn} ${link}`;
-  if((p.views||0)>=3) return `Hola ${first} 👋 Vi que estuviste mirando la propuesta. ¿Querés que te ayude a elegir la opción que mejor te cierre?${bn} ${link}`;
-  if(p.status==="viewed") return `Hola ${first} 👋 Vi que ya revisaste la propuesta. ¿Te quedó alguna duda? Si querés avanzar, te reservo con la seña.${bn} Vigente hasta el ${vig}: ${link}`;
-  return `Hola ${first} 👋 ¿Pudiste ver la propuesta que te mandé?${bn} Vigente hasta el ${vig}: ${link}`;
+  if((p.followUps||0)>=3) return `${hello(first)}, no quiero molestarte 🙂 Dejo la propuesta disponible hasta el ${vig} por si querés retomarla más adelante: ${link}`;
+  if(p.chosenOption) return `${hello(first)} 👋 Vi que elegiste ${o.name} (${tot}).${p.depositPct>0?` La seña es ${dep}.`:""} ¿Avanzamos y te lo dejo reservado?${bn} ${link}`;
+  if(daysLeft(p)<=2) return `${hello(first)} 👋 Aviso rápido: ${expiryText(p).toLowerCase()}. ¿Avanzamos para que no pierdas el precio?${bn} ${link}`;
+  if((p.views||0)>=3) return `${hello(first)} 👋 Vi que estuviste mirando la propuesta. ¿Querés que te ayude a elegir la opción que mejor te cierre?${bn} ${link}`;
+  if(p.status==="viewed") return `${hello(first)} 👋 Vi que ya revisaste la propuesta. ¿Te quedó alguna duda? Si querés avanzar, te reservo con la seña.${bn} Vigente hasta el ${vig}: ${link}`;
+  return `${hello(first)} 👋 ¿Pudiste ver la propuesta que te mandé?${bn} Vigente hasta el ${vig}: ${link}`;
 }
 async function followUp(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
@@ -1108,7 +1149,7 @@ async function sendReviewRequest(name,phone,proposalId){
   name=(name||"").trim();
   if(!name||normalizePhone(phone).length<8) return toast("Completá el nombre y un WhatsApp válido.");
   let token; try{token=await createReviewToken(name,phone,proposalId);}catch(e){return toast(e.message||"No se pudo crear el pedido.");}
-  const msg=`Hola ${name.split(" ")[0]} 👋 ¡Gracias por confiar en ${state.business.name}! ¿Me dejás una opinión? Te lleva 1 minuto y me ayuda un montón: ${reviewLink(token)}`;
+  const msg=`${hello(name)} 👋 ¡Gracias por confiar en ${state.business.name}! ¿Me dejás una opinión? Te lleva 1 minuto y me ayuda un montón: ${reviewLink(token)}`;
   closeModal("toolModal");
   state.activity.unshift({icon:"⭐",text:`Pediste una opinión a ${name}.`,time:"Ahora"}); saveState();
   window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(msg)}`,"_blank","noopener");
@@ -1116,7 +1157,7 @@ async function sendReviewRequest(name,phone,proposalId){
 function openAskReview(id){
   const p=id?state.proposals.find(x=>x.id===id):null;
   openTool(`<h3>⭐ Pedir una opinión</h3><p class="tool-sub">${p?"Le mandamos un link de un solo uso para que cuente cómo le fue.":"Sirve también para clientes que cerraron el trato fuera de la plataforma."}</p>
-    <label class="tool-field">Nombre del cliente<input id="rqName" maxlength="60" value="${escapeHtml(p?p.client.name:"")}"></label>
+    <label class="tool-field">Nombre del cliente<input id="rqName" maxlength="60" value="${escapeHtml(p&&p.client.name!==NO_NAME?p.client.name:"")}"></label>
     <label class="tool-field" style="margin-top:10px">WhatsApp<input id="rqPhone" inputmode="tel" placeholder="3511234567" value="${escapeHtml(p?p.client.phone:"")}"></label>
     <p class="tool-sub" style="margin-top:12px">Cada link se usa una sola vez. Por seguridad, vos no podés opinar sobre tu propio negocio.</p>
     <div class="tool-actions"><button class="btn btn-ghost" data-tool-close>Cancelar</button><button class="btn btn-primary" id="rqSend">Enviar por WhatsApp</button></div>`);
@@ -1139,7 +1180,7 @@ async function openReviewLink(token){
     card.innerHTML=`<div class="public-card"><div class="public-greeting">${used?"Ya recibimos tu opinión 🙌":"Este link no está disponible"}</div><p style="color:#64748b">${used?"¡Gracias por tomarte el tiempo!":"Pedile a quien te lo envió que te mande uno nuevo."}</p></div>`;
   }else{
     const rp={review:null,_token:token};
-    card.innerHTML=`<div class="public-card"><div class="public-brand">${avatarHtml()}${escapeHtml((state.business.name||"").toUpperCase())}${ratingChip()}</div><div class="public-greeting">Hola ${escapeHtml(info.client||"")} 👋</div><p style="color:#475569">Contanos cómo fue tu experiencia con ${escapeHtml(state.business.name||"el negocio")}.</p>${reviewFormMarkup(rp)}</div>`;
+    card.innerHTML=`<div class="public-card"><div class="public-brand">${avatarHtml()}${escapeHtml((state.business.name||"").toUpperCase())}${ratingChip()}</div><div class="public-greeting">${escapeHtml(hello(info.client))} 👋</div><p style="color:#475569">Contanos cómo fue tu experiencia con ${escapeHtml(state.business.name||"el negocio")}.</p>${reviewFormMarkup(rp)}</div>`;
     attachReview(rp);
   }
   openModal("publicModal"); document.documentElement.classList.add("proposal-ready");
@@ -1354,9 +1395,9 @@ function bind(){
 
 
 /* ===== v23: bonus, cupos, mensaje de voz, "qué pasa después" y aceptación con nombre ===== */
-const VOICE_MAX=30;
+const VOICE_MAX=60;
 const OK_AUDIO=/^data:audio\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/;
-function safeAudio(u){return typeof u==="string"&&u.length<=400000&&OK_AUDIO.test(u)?u:"";}
+function safeAudio(u){return typeof u==="string"&&u.length<=800000&&OK_AUDIO.test(u)?u:"";}
 let builderVoice="", _voiceRec=null;
 
 function fmtLeft(ms){
@@ -1407,7 +1448,7 @@ function perksText(p){
 }
 function voiceMarkup(p){
   const v=safeAudio(p.voice); if(!v) return "";
-  return `<div class="voice-box" data-sec="mensaje">${avatarHtml()}<div><b>Un mensaje de ${escapeHtml(state.business.name)} para vos</b><audio controls preload="metadata" src="${v}"></audio><small>Audio corto, menos de 30 segundos</small></div></div>`;
+  return `<div class="voice-box" data-sec="mensaje">${avatarHtml()}<div><b>Un mensaje de ${escapeHtml(state.business.name)} para vos</b><audio controls preload="metadata" src="${v}"></audio><small>Audio corto, hasta 1 minuto</small></div></div>`;
 }
 const DEFAULT_AFTER=[
   {t:"Reservás",d:"Confirmás tu lugar con la seña y te mostramos cómo pagarla.",w:""},
@@ -1426,7 +1467,7 @@ function acceptFormMarkup(p){
   return `<form class="accept-form" id="acceptForm" hidden novalidate data-sec="aceptar">
     <h4>Último paso: confirmá tu aceptación</h4>
     <p class="accept-sum" id="acceptSum"></p>
-    <label class="accept-name">Nombre y apellido<input id="acceptName" autocomplete="name" maxlength="120" value="${escapeHtml(p.client.name)}"></label>
+    <label class="accept-name">Nombre y apellido<input id="acceptName" autocomplete="name" maxlength="120" value="${escapeHtml(p.client.name===NO_NAME?"":p.client.name)}"></label>
     <details class="terms-box"><summary>Leer las condiciones</summary><p id="acceptTermsText"></p></details>
     <label class="accept-chk"><input type="checkbox" id="acceptTerms"><span>Leí y acepto las condiciones de esta propuesta.</span></label>
     <p class="voice-status" id="acceptErr" role="alert" hidden></p>
@@ -1475,12 +1516,12 @@ function blobToAudioUrl(blob){
 }
 async function fileToVoice(file){
   if(!file.type.startsWith("audio/")) throw new Error("Elegí un archivo de audio.");
-  if(file.size>1.5*1024*1024) throw new Error("El audio pesa demasiado. Probá con uno de 30 segundos o menos.");
+  if(file.size>600*1024) throw new Error("El audio pesa demasiado. Probá con uno de hasta 60 segundos y más liviano (menos de 600 KB).");
   const dur=await new Promise(res=>{
     const a=new Audio(), u=URL.createObjectURL(file), done=v=>{URL.revokeObjectURL(u);res(v);};
     a.preload="metadata"; a.onloadedmetadata=()=>done(a.duration); a.onerror=()=>done(NaN); setTimeout(()=>done(NaN),4000); a.src=u;
   });
-  if(isFinite(dur)&&dur>VOICE_MAX+.5) throw new Error("El audio dura más de 30 segundos.");
+  if(isFinite(dur)&&dur>VOICE_MAX+.5) throw new Error("El audio dura más de 60 segundos.");
   return blobToAudioUrl(file);
 }
 function renderVoiceField(msg){
@@ -1546,7 +1587,6 @@ function initPerks(){
 }
 
 /* ===== v24: persuasión en la vista del cliente ===== */
-function firstName(n){return String(n||"").trim().split(/\s+/)[0]||"";}
 function shortDate(iso){return new Date(iso+"T12:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short"});}
 function dayWord(ms){
   const d=new Date(ms), n=new Date(), a=new Date(d.getFullYear(),d.getMonth(),d.getDate()), b=new Date(n.getFullYear(),n.getMonth(),n.getDate());
