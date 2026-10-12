@@ -745,3 +745,20 @@ html.proposal-mode .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 .strength li b{font-size:13.5px;color:#92400e}.strength li small{font-size:12.5px;line-height:1.4;color:#78350f}
 .strength-ok{margin:10px 0 0;font-size:13.5px;font-weight:700;color:#14532d}
 @media (prefers-reduced-motion:reduce){.strength-bar i{transition:none}}
+
+/* v30: galería de fotos por opción (hasta 10) */
+.photo-field .photo-count{font-weight:600;color:var(--muted)}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;flex:1 1 100%}
+.photo-grid figure{position:relative;margin:0}
+.photo-grid img{width:100%;height:58px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
+.photo-x{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:#0b1220;color:#fff;font-size:15px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.photo-x:focus-visible{outline:2px solid var(--brand,#16a34a);outline-offset:2px}
+.choice-gallery{position:relative;margin-bottom:4px;border-radius:12px;overflow:hidden;background:var(--soft)}
+.gal-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.gal-track::-webkit-scrollbar{display:none}
+.gal-track img{flex:0 0 100%;width:100%;aspect-ratio:16/9;max-height:170px;object-fit:cover;scroll-snap-align:center;display:block}
+.gal-count{position:absolute;right:8px;bottom:8px;padding:2px 8px;border-radius:999px;background:rgba(11,18,32,.72);color:#fff;font-size:11px;font-weight:700}
+.gal-nav{position:absolute;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:0;background:rgba(255,255,255,.88);color:#0b1220;font-size:20px;line-height:1;cursor:pointer;display:grid;place-items:center;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.gal-nav.prev{left:6px}.gal-nav.next{right:6px}
+.gal-nav:focus-visible{outline:2px solid var(--brand,#16a34a);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.gal-track{scroll-behavior:auto}}
