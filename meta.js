@@ -18,7 +18,7 @@ const GENERIC = {
 // Texto persuasivo según el estado real de la propuesta. Solo usa datos verdaderos (nada de escasez inventada).
 export function copyFor(m) {
   if (!m) return GENERIC;
-  const first = (m.client_first || "").trim(), biz = m.business || SITE;
+  const f0 = (m.client_first || "").trim(), first = f0 === "Cliente" ? "" : f0, biz = m.business || SITE;
   if (m.status === "expired")
     return { title: cut(`Propuesta vencida · ${biz}`, 70), desc: cut(`Esta propuesta venció el ${fecha(m.expires_at)}. Escribile a ${biz} y te la actualizan para retomarla.`, 190) };
   if (m.status === "accepted")
@@ -86,7 +86,7 @@ export function applyMeta(html, block, origin) {
 }
 
 export const reviewMeta = (d, origin, id) => {
-  const first = ((d && d.client) || "").trim(), biz = (d && d.business && d.business.name) || SITE, ok = d && d.status === "valid";
+  const f0 = ((d && d.client) || "").trim(), first = f0 === "Cliente" ? "" : f0, biz = (d && d.business && d.business.name) || SITE, ok = d && d.status === "valid";
   return metaBlock({ title: cut(ok ? `${first ? first + ", " : ""}¿cómo te fue con ${biz}?` : `Opinión · ${biz}`, 70),
     desc: ok ? "Dejá tu opinión en 1 minuto: ayudás a otras personas a decidir." : "Este link ya no está disponible.",
     url: `${origin}/?r=${id}`, image: origin + "/og-propuesta.png", alt: "Dejá tu opinión", noindex: true });
