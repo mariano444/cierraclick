@@ -299,7 +299,7 @@
           <div class="builder-col">
             <section class="form-card">
               <h3>Cliente</h3>
-              <label>Nombre<input id="clientName" required placeholder="Juan Pérez"></label>
+              <label>Nombre <small>(opcional)</small><input id="clientName" placeholder="Juan Pérez" autocomplete="off"></label>
               <label>WhatsApp<input id="clientPhone" required placeholder="3511234567" inputmode="tel"></label>
               <label>Título de la propuesta<input id="proposalTitle" required value="Propuesta de servicio"></label>
               <label>Válida hasta<input id="proposalExpires" type="date" required></label>
@@ -327,7 +327,7 @@ Soporte inicial</textarea>
             <section class="form-card">
               <h3>Incentivos y mensaje</h3>
               <p class="hint">Todo es opcional. Usá solo incentivos que vas a cumplir: el cliente los ve con cuenta regresiva.</p>
-              <div class="voice-field"><span class="option-label">MENSAJE PERSONAL EN AUDIO (HASTA 30 s)</span><div id="voiceField"></div></div>
+              <div class="voice-field"><span class="option-label">MENSAJE PERSONAL EN AUDIO (HASTA 60 s)</span><div id="voiceField"></div></div>
               <label>Bonus por aceptar a tiempo<input id="bonusText" maxlength="140" placeholder="Ej: 3% extra de descuento o instalación gratis"></label>
               <label>El bonus vale durante (horas desde que la enviás)<input id="bonusHours" type="number" min="1" max="168" value="48"></label>
               <label>Cupos reales disponibles (vacío = no mostrar)<input id="slotsLeft" type="number" min="0" max="999" inputmode="numeric" placeholder="Ej: 2"></label>
