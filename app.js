@@ -180,7 +180,7 @@ const Cloud={
     if(biz.error||props.error||catalog.error||events.error)throw biz.error||props.error||catalog.error||events.error;
     const b=biz.data;
     state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,depositPolicy:b.deposit_policy,faq:b.faq,photo:b.photo||"",alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note,afterSteps:b.after_steps||""},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
-    state.clients=Object.values(state.proposals.reduce((a,p)=>{const k=p.client.phone||p.client.name;a[k]||(a[k]={...p.client,proposals:0});a[k].proposals++;return a;},{}));fillSettings();renderDashboard();
+    state.clients=Object.values(state.proposals.reduce((a,p)=>{const k=p.client.phone||p.client.name;a[k]||(a[k]={...p.client,proposals:0});a[k].proposals++;return a;},{}));applyRevCache();fillSettings();renderDashboard();
   },
   // RPC anónimo por fetch: no necesita cargar supabase-js (~100 KB desde un CDN), que era lo que más demoraba la propuesta del cliente.
   async pub(name,args={}){
@@ -1094,13 +1094,18 @@ function reviewsPanel(){
   return `<div class="loss-list"><b>⭐ Opiniones de tus clientes</b>${state.business.pendingReviews?`<small style="color:#92400e">${state.business.pendingReviews} opinión${state.business.pendingReviews>1?"es":""} en revisión: no se muestran al público ni cuentan en el promedio.</small>`:""}${r.count?`<div class="rev-sum"><strong>${fmtAvg(r.avg)}</strong><span class="review-stars">${stars(Math.round(r.avg))}</span><small>${r.count} opinión${r.count>1?"es":""}</small></div>${revRow(r.list)}`:'<p style="color:#64748b;margin:6px 0 0">Todavía no hay opiniones. Aparecen cuando un cliente que aceptó una propuesta deja la suya desde su enlace.</p>'}</div>`;
 }
 function renderPerfExtras(){renderPerfExtrasBase(); const box=$("#perfExtras"); if(box) box.insertAdjacentHTML("beforeend",reviewsPanel());}
+let REV_CACHE=null; // las reseñas sobreviven a Cloud.hydrate(), que reconstruye state.business
+function applyRevCache(){ if(REV_CACHE&&state&&state.business) Object.assign(state.business,REV_CACHE); }
 async function loadReviews(){
   if(!Cloud.on||!currentUser) return;
   try{const sb=await Auth.client(); const q=c=>sb.from("business_reviews").select(c).order("created_at",{ascending:false}).limit(100);
-    let {data,error}=await q("stars,comment,author,source,status,created_at,photo"); if(error) ({data}=await q("stars,comment,author,source,status,created_at"));
+    let {data,error}=await q("stars,comment,author,source,status,created_at,photo"); if(error) ({data,error}=await q("stars,comment,author,source,status,created_at"));
+    if(error) throw error;
     const rows=data||[], pub=rows.filter(r=>r.status==="published"), c=pub.length;
-    state.business.rating={avg:c?pub.reduce((x,r)=>x+r.stars,0)/c:0,count:c};
-    state.business.reviews=pub.filter(r=>r.comment).slice(0,8); state.business.pendingReviews=rows.length-c;}catch(e){}
+    REV_CACHE={rating:{avg:c?pub.reduce((x,r)=>x+r.stars,0)/c:0,count:c},reviews:pub.filter(r=>r.comment).slice(0,8),pendingReviews:rows.length-c};
+    applyRevCache();
+    if($("#perfExtras")) renderPerfExtras(); // repinta el panel con los datos ya cargados
+  }catch(e){console.warn("loadReviews:",e);}
 }
 function reviewFormMarkup(p){
   const rv=p.review, bn=escapeHtml(state.business.name||"el negocio");
