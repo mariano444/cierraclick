@@ -762,3 +762,14 @@ html.proposal-mode .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 .gal-nav.prev{left:6px}.gal-nav.next{right:6px}
 .gal-nav:focus-visible{outline:2px solid var(--brand,#16a34a);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.gal-track{scroll-behavior:auto}}
+
+/* ===== Fotos en reseñas: círculo recortado en tarjetas, formulario y vista "Tu opinión" ===== */
+.review-av{overflow:hidden}
+.review-av.has-photo{background:none;padding:0}
+.review-av img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
+.rv-avatar{flex:none;display:grid;place-items:center;width:64px;height:64px;border-radius:50%;overflow:hidden;background:var(--soft);border:1px solid var(--line);font-size:1.6rem}
+.rv-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.rv-photo{display:flex;align-items:center;gap:14px}
+.rv-photo-actions{display:grid;gap:6px;min-width:0}
+.rv-photo-actions>div{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.rv-photo-actions small{color:var(--muted)}
