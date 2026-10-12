@@ -425,16 +425,21 @@ function optionMarkup(p,o,mode){
 }
 
 function faqItems(b){
-  return String(b.faq||"").split("\n").map(l=>l.split("|")).filter(a=>a.length>=2&&a[0].trim()&&a.slice(1).join("|").trim()).map(a=>({q:a[0].trim(),a:a.slice(1).join("|").trim()})).slice(0,8);
+  return String(b.faq||"").split("\n").map(l=>l.split("|")).filter(a=>a.length>=2&&a[0].trim()&&a.slice(1).join("|").trim()).map(a=>({q:a[0].trim(),a:a.slice(1).join("|").trim()})).slice(0,12);
+}
+const FAQ_VISIBLE=4;
+function faqMarkup(items){
+  if(!items.length) return "";
+  const extra=items.length-FAQ_VISIBLE;
+  return `<div class="faq-wrap" data-faq><h5 class="faq-title">Preguntas frecuentes</h5><div class="faq-list">${items.map((x,i)=>`<details class="faq-item${i>=FAQ_VISIBLE?" faq-extra":""}" name="faq"${i>=FAQ_VISIBLE?" hidden":""}><summary>${escapeHtml(x.q)}</summary><p>${escapeHtml(x.a)}</p></details>`).join("")}</div>${extra>0?`<button type="button" class="faq-more" data-faq-more aria-expanded="false">Ver ${extra} pregunta${extra>1?"s":""} más</button>`:""}</div>`;
 }
 function assuranceMarkup(p){
   const b=state.business, items=faqItems(b), pol=(b.depositPolicy||"").trim(), war=p.options.filter(o=>o.hasWarranty&&o.warranty);
-  const rv=reviewsMarkup(); if(!items.length&&!pol&&!war.length&&!rv) return "";
+  if(!items.length&&!pol&&!war.length) return "";
   return `<section class="assure" data-sec="garantias"><h4>Antes de decidir</h4>
-    ${rv}
     ${pol?`<div class="assure-item"><b>🔒 Sobre la seña</b><p>${escapeHtml(pol)}</p></div>`:""}
     ${war.length?`<div class="assure-item"><b>🛡️ Garantía</b><p>${war.map(o=>`${escapeHtml(o.name)}: ${escapeHtml(o.warranty)}`).join(" · ")}</p></div>`:""}
-    ${items.map(x=>`<details class="faq-item"><summary>${escapeHtml(x.q)}</summary><p>${escapeHtml(x.a)}</p></details>`).join("")}</section>`;
+    ${faqMarkup(items)}</section>`;
 }
 function publicProposalMarkup(p, mode="full"){
   const multi=p.options.length>1;
@@ -451,6 +456,7 @@ function publicProposalMarkup(p, mode="full"){
       ${p.status!=="expired"?perksMarkup(p):""}
       ${p.status!=="expired"?compareMarkup(p,mode):""}
       ${multi&&mode==="full"&&p.status!=="expired"?pickHelperMarkup(p):""}${multi&&mode==="full"?carouselTabsMarkup(p):""}<div class="choice-grid n${p.options.length}${multi&&mode==="full"?" cc-carousel":""}"${multi&&mode==="full"?' tabindex="0" role="group" aria-roledescription="carrusel" aria-label="Opciones de la propuesta"':""}>${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
+      ${mode==="full"&&p.status!=="expired"?reviewsMarkup():""}
       <div class="public-includes" data-sec="incluye">${includes}</div>
       <div data-sec="pago">${payBlock(p)}</div>
       <p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
@@ -995,17 +1001,20 @@ function getReviews(){
     list:b.reviews.map(r=>({stars:r.stars,comment:r.comment,author:r.author,source:r.source,at:r.created_at?new Date(r.created_at).getTime():(r.at||0)}))};
   const rs=[...(state.proposals||[]).filter(p=>p.review&&p.review.stars).map(p=>({stars:p.review.stars,comment:p.review.comment||"",author:(p.client.name||"").split(" ")[0],source:"proposal",at:p.review.at||0})),...(state.extReviews||[]).map(r=>({...r,source:"external"}))];
   const c=rs.length;
-  return {avg:c?rs.reduce((x,r)=>x+r.stars,0)/c:0,count:c,list:rs.filter(r=>r.comment).sort((x,y)=>y.at-x.at).slice(0,5)};
+  return {avg:c?rs.reduce((x,r)=>x+r.stars,0)/c:0,count:c,list:rs.filter(r=>r.comment).sort((x,y)=>y.at-x.at).slice(0,8)};
 }
 function ratingChip(){const r=getReviews(); return r.count?`<span class="rating-chip">★ ${fmtAvg(r.avg)} · ${r.count} ${r.count>1?"opiniones":"opinión"}</span>`:"";}
-const reviewCard=r=>`<figure class="review"><div class="review-stars">${stars(r.stars)}</div><blockquote>${escapeHtml(r.comment)}</blockquote><figcaption>— ${escapeHtml(r.author||"Cliente")} · ${r.source==="external"?"cliente del negocio":"propuesta aceptada"}</figcaption></figure>`;
+const reviewCard=r=>{const nm=(r.author||"Cliente").trim()||"Cliente";
+  return `<figure class="review"><div class="review-top"><span class="review-av" aria-hidden="true">${escapeHtml(nm.charAt(0).toUpperCase())}</span><div><div class="review-stars" role="img" aria-label="${Number(r.stars)||0} de 5 estrellas">${stars(r.stars)}</div><figcaption>${escapeHtml(nm)}<small>${r.source==="external"?"Cliente del negocio":"Cliente verificado"}</small></figcaption></div></div>${r.comment?`<blockquote>${escapeHtml(r.comment)}</blockquote>`:""}</figure>`;};
+const revRow=list=>`<div class="rev-row" tabindex="0" role="group" aria-label="Opiniones de clientes">${list.map(reviewCard).join("")}</div>`;
 function reviewsMarkup(){
   const r=getReviews(); if(!r.count) return "";
-  return `<div class="reviews-box"><div class="rev-sum"><strong>${fmtAvg(r.avg)}</strong><span class="review-stars">${stars(Math.round(r.avg))}</span><small>${r.count} opinión${r.count>1?"es":""} de clientes</small></div>${r.list.slice(0,3).map(reviewCard).join("")}</div>`;
+  const list=r.list.filter(x=>x.comment).slice(0,8);
+  return `<section class="reviews-box" data-sec="opiniones"><div class="rev-head"><div class="rev-sum"><strong>${fmtAvg(r.avg)}</strong><span class="review-stars">${stars(Math.round(r.avg))}</span><small>${r.count} opinión${r.count>1?"es":""} de clientes</small></div>${list.length>1?'<div class="rev-nav"><button type="button" data-rev-nav="-1" aria-label="Opiniones anteriores">‹</button><button type="button" data-rev-nav="1" aria-label="Opiniones siguientes">›</button></div>':""}</div>${list.length?revRow(list):""}</section>`;
 }
 function reviewsPanel(){
   const r=getReviews();
-  return `<div class="loss-list"><b>⭐ Opiniones de tus clientes</b>${state.business.pendingReviews?`<small style="color:#92400e">${state.business.pendingReviews} opinión${state.business.pendingReviews>1?"es":""} en revisión: no se muestran al público ni cuentan en el promedio.</small>`:""}${r.count?`<div class="rev-sum"><strong>${fmtAvg(r.avg)}</strong><span class="review-stars">${stars(Math.round(r.avg))}</span><small>${r.count} opinión${r.count>1?"es":""}</small></div>${r.list.map(reviewCard).join("")}`:'<p style="color:#64748b;margin:6px 0 0">Todavía no hay opiniones. Aparecen cuando un cliente que aceptó una propuesta deja la suya desde su enlace.</p>'}</div>`;
+  return `<div class="loss-list"><b>⭐ Opiniones de tus clientes</b>${state.business.pendingReviews?`<small style="color:#92400e">${state.business.pendingReviews} opinión${state.business.pendingReviews>1?"es":""} en revisión: no se muestran al público ni cuentan en el promedio.</small>`:""}${r.count?`<div class="rev-sum"><strong>${fmtAvg(r.avg)}</strong><span class="review-stars">${stars(Math.round(r.avg))}</span><small>${r.count} opinión${r.count>1?"es":""}</small></div>${revRow(r.list)}`:'<p style="color:#64748b;margin:6px 0 0">Todavía no hay opiniones. Aparecen cuando un cliente que aceptó una propuesta deja la suya desde su enlace.</p>'}</div>`;
 }
 function renderPerfExtras(){renderPerfExtrasBase(); const box=$("#perfExtras"); if(box) box.insertAdjacentHTML("beforeend",reviewsPanel());}
 async function loadReviews(){
@@ -1013,7 +1022,7 @@ async function loadReviews(){
   try{const sb=await Auth.client(); const {data}=await sb.from("business_reviews").select("stars,comment,author,source,status,created_at").order("created_at",{ascending:false}).limit(100);
     const rows=data||[], pub=rows.filter(r=>r.status==="published"), c=pub.length;
     state.business.rating={avg:c?pub.reduce((x,r)=>x+r.stars,0)/c:0,count:c};
-    state.business.reviews=pub.filter(r=>r.comment).slice(0,5); state.business.pendingReviews=rows.length-c;}catch(e){}
+    state.business.reviews=pub.filter(r=>r.comment).slice(0,8); state.business.pendingReviews=rows.length-c;}catch(e){}
 }
 function reviewFormMarkup(p){
   const rv=p.review, bn=escapeHtml(state.business.name||"el negocio");
@@ -1797,3 +1806,18 @@ function initPickHelper(){
     if(card&&!matchMedia("(max-width:640px)").matches) card.scrollIntoView({block:"nearest",behavior:matchMedia("(prefers-reduced-motion:reduce)").matches?"auto":"smooth"});
   });
 }
+
+
+/* v28: carrusel horizontal de opiniones y "ver más" en preguntas frecuentes */
+document.addEventListener("click",e=>{
+  const nav=e.target.closest&&e.target.closest("[data-rev-nav]");
+  if(nav){const row=nav.closest(".reviews-box").querySelector(".rev-row"); if(row){const calm=matchMedia("(prefers-reduced-motion:reduce)").matches; row.scrollBy({left:Number(nav.dataset.revNav)*Math.max(row.clientWidth*.8,260),behavior:calm?"auto":"smooth"});} return;}
+  const more=e.target.closest&&e.target.closest("[data-faq-more]");
+  if(more){
+    const wrap=more.closest("[data-faq]"), open=more.getAttribute("aria-expanded")!=="true", extra=wrap.querySelectorAll(".faq-extra");
+    extra.forEach(d=>{d.hidden=!open; if(!open) d.open=false;});
+    more.setAttribute("aria-expanded",String(open));
+    more.textContent=open?"Ver menos":`Ver ${extra.length} pregunta${extra.length>1?"s":""} más`;
+    if(!open) wrap.scrollIntoView({block:"nearest",behavior:"smooth"});
+  }
+});
