@@ -76,3 +76,5 @@ v7: vista previa que no cuenta visitas, seña en % con monto exacto, pasos para 
 v8: login y registro (modo demo local o Supabase vía config.js), datos de transferencia en Configuración, aviso de comprobante por WhatsApp y confirmación de seña recibida.
 
 v9: capa de diseño (tokens, estados de foco, jerarquía, barra superior y navegación en celular, propuesta del cliente con avatar y botón fijo, secciones numeradas en el creador).
+
+v30: nombre del cliente opcional (si falta se guarda como "Cliente" y los mensajes salen sin nombre), saludo según la hora (Buen día / Buenas tardes / Buenas noches) en la propuesta, el panel y los mensajes de WhatsApp, hasta 10 fotos por opción con galería deslizable y mensaje de voz de hasta 60 segundos. Para las galerías en Supabase, ejecutá `supabase_v4_fotos_nombre.sql`.
