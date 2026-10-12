@@ -174,13 +174,20 @@ const Cloud={
     state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,depositPolicy:b.deposit_policy,faq:b.faq,photo:b.photo||"",alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note,afterSteps:b.after_steps||""},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
     state.clients=Object.values(state.proposals.reduce((a,p)=>{const k=p.client.phone||p.client.name;a[k]||(a[k]={...p.client,proposals:0});a[k].proposals++;return a;},{}));fillSettings();renderDashboard();
   },
+  // RPC anónimo por fetch: no necesita cargar supabase-js (~100 KB desde un CDN), que era lo que más demoraba la propuesta del cliente.
+  async pub(name,args={}){
+    const key=CFG.supabaseKey||"", r=await fetch(`${CFG.supabaseUrl}/rest/v1/rpc/${name}`,{method:"POST",headers:{apikey:key,...(key.startsWith("sb_")?{}:{authorization:`Bearer ${key}`}),"content-type":"application/json"},body:JSON.stringify(args)});
+    if(!r.ok){let m="";try{m=(await r.json()).message||"";}catch(e){} const err=new Error(m||`Error ${r.status}`); err.code=r.status===404?"PGRST202":""; throw err;}
+    const t=await r.text(); return t?JSON.parse(t):null;
+  },
   async publicProposal(id){
-    const r=await this.rpc("get_public_proposal",{p_id:id}); if(!r) return r;
-    // Los datos extra se piden en paralelo (antes eran en serie) y cada uno es opcional.
-    const [x,ox,v3]=await Promise.all([
-      this.rpc("get_public_extras",{p_id:id}).catch(()=>null),
-      this.rpc("get_public_option_extras",{p_id:id}).then(v=>({v}),()=>null),
-      this.rpc("get_public_v3",{p_id:id}).catch(()=>null)]);
+    // Las 4 consultas salen a la vez (antes: 1 y después 3), y las extras son opcionales.
+    const [r,x,ox,v3]=await Promise.all([
+      this.pub("get_public_proposal",{p_id:id}),
+      this.pub("get_public_extras",{p_id:id}).catch(()=>null),
+      this.pub("get_public_option_extras",{p_id:id}).then(v=>({v}),()=>null),
+      this.pub("get_public_v3",{p_id:id}).catch(()=>null)]);
+    if(!r) return r;
     if(x) r.business={...(r.business||{}),...x};
     if(ox){const m=ox.v; if(m&&r.options) r.options.forEach(o=>{const e=m[o.id]; if(e){o.why=e.why;o.photo=e.photo;}}); r._ex=true;}
     if(v3){applyV3(r,v3); r.business={...(r.business||{}),afterSteps:v3.afterSteps||""};}
@@ -450,7 +457,6 @@ function publicProposalMarkup(p, mode="full"){
       <div class="public-greeting">Hola ${escapeHtml(firstName(p.client.name))} 👋</div>
       <div class="public-title">${escapeHtml(p.title)}</div>
       ${mode==="full"?`<span class="valid">${expiryLine(p)}</span>`:""}
-      ${p.status!=="expired"?sumBarMarkup(p,mode):""}
       ${p.status!=="expired"?voiceMarkup(p):""}
       ${mode==="full"&&p.status!=="expired"?`<div class="steps"><span><b>1</b> ${multi?"Elegí tu opción":"Revisá la propuesta"}</span><span><b>2</b> Aceptá</span><span><b>3</b> Reservá${p.depositPct>0?" con seña":""}</span></div><ul class="trust-strip"><li>🔒 Sin cargo al aceptar</li>${p.options.some(o=>o.hasWarranty&&o.warranty)?"<li>🛡️ Garantía</li>":""}<li>💬 Por WhatsApp</li></ul>`:""}
       ${p.status!=="expired"?perksMarkup(p):""}
@@ -550,7 +556,7 @@ async function openPublicLink(id){
   document.documentElement.classList.add("proposal-ready");
 }
 async function openPublic(id,preview=false,quiet=false){
-  if(Cloud.on&&!preview){try{const remote=await Cloud.publicProposal(id);if(!remote)return toast("No se encontró la propuesta.");const p={...remote,createdAt:remote.createdAt||new Date().toISOString()};state.business={...state.business,...remote.business};state.proposals=[p,...state.proposals.filter(x=>x.id!==id)];await Cloud.rpc("track_proposal",{p_id:id,p_type:"view"});return openPublic(id,true,true);}catch(e){return toast(e.message||"No se pudo abrir la propuesta.");}}
+  if(Cloud.on&&!preview){try{const remote=await Cloud.publicProposal(id);if(!remote)return toast("No se encontró la propuesta.");const p={...remote,createdAt:remote.createdAt||new Date().toISOString()};state.business={...state.business,...remote.business};state.proposals=[p,...state.proposals.filter(x=>x.id!==id)];Cloud.pub("track_proposal",{p_id:id,p_type:"view"}).catch(()=>{});return openPublic(id,true,true);}catch(e){return toast(e.message||"No se pudo abrir la propuesta.");}}
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
   if(Cloud.on&&currentUser&&!p._ex){p._ex=true;try{const ox=await Cloud.rpc("get_public_option_extras",{p_id:id});(p.options||[]).forEach(o=>{const x=ox&&ox[o.id];if(x){o.why=x.why;o.photo=x.photo;}});}catch(e){}}
   if(Cloud.on&&currentUser&&!p._v3){p._v3=true;try{const v=await Cloud.rpc("get_public_v3",{p_id:id});if(v)applyV3(p,v);}catch(e){}}
@@ -1249,7 +1255,9 @@ function showPanel(name){
 function bind(){
   $("#year").textContent=new Date().getFullYear();
   const ls=Auth.remote?null:Auth.local();
-  if(ls) applyUser(ls); else if(Auth.remote) Auth.restore().then(u=>u&&applyUser(u)).catch(()=>{});
+  // En el link del cliente no se carga supabase-js al inicio (compite con la propuesta); se precarga después, en reposo.
+  if(ls) applyUser(ls); else if(Auth.remote&&!PROPOSAL_MODE) Auth.restore().then(u=>u&&applyUser(u)).catch(()=>{});
+  else if(Auth.remote&&PROPOSAL_MODE) setTimeout(()=>{(window.requestIdleCallback||setTimeout)(()=>Auth.client().catch(()=>{}));},2500);
   fillSettings(); updateAuthUI();
   $("#authBtn").addEventListener("click",async()=>{
     if(!currentUser) return openAuth("login");
