@@ -82,3 +82,5 @@ v30: nombre del cliente opcional (si falta se guarda como "Cliente" y los mensaj
 v31: reproductor de audio propio en la propuesta y en el creador: muestra la duración (ej. 0:45 min) antes de tocar play, la barra avanza de forma animada al ritmo del audio y se puede adelantar o retroceder tocándola.
 
 v32: las reseñas muestran nombre y apellido, y el link de opinión (?r=) muestra también las opiniones de otros clientes debajo del formulario.
+
+v33: galería de fotos reutilizables. Las fotos que subís a una opción se guardan solas en «Mi galería» (sin repetidas) y se eligen con «🖼 Elegir de mi galería» para usarlas en otras opciones o propuestas. Se guardan en el dispositivo y, con Supabase, en la nube: ejecutá `supabase_galeria.sql` una vez.
