@@ -78,3 +78,5 @@ v8: login y registro (modo demo local o Supabase vía config.js), datos de trans
 v9: capa de diseño (tokens, estados de foco, jerarquía, barra superior y navegación en celular, propuesta del cliente con avatar y botón fijo, secciones numeradas en el creador).
 
 v30: nombre del cliente opcional (si falta se guarda como "Cliente" y los mensajes salen sin nombre), saludo según la hora (Buen día / Buenas tardes / Buenas noches) en la propuesta, el panel y los mensajes de WhatsApp, hasta 10 fotos por opción con galería deslizable y mensaje de voz de hasta 60 segundos. Para las galerías en Supabase, ejecutá `supabase_v4_fotos_nombre.sql`.
+
+v31: reproductor de audio propio en la propuesta y en el creador: muestra la duración (ej. 0:45 min) antes de tocar play, la barra avanza de forma animada al ritmo del audio y se puede adelantar o retroceder tocándola.
