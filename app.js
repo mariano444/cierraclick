@@ -1471,7 +1471,7 @@ function perksText(p){
 }
 function voiceMarkup(p){
   const v=safeAudio(p.voice); if(!v) return "";
-  return `<div class="voice-box" data-sec="mensaje">${avatarHtml()}<div><b>Un mensaje de ${escapeHtml(state.business.name)} para vos</b><audio controls preload="metadata" src="${v}"></audio><small>Audio corto, hasta 1 minuto</small></div></div>`;
+  return `<div class="voice-box" data-sec="mensaje">${avatarHtml()}<div><b>Un mensaje de ${escapeHtml(state.business.name)} para vos</b>${voicePlayerHtml(v)}<small data-vp-len>Audio corto, hasta 1 minuto</small></div></div>`;
 }
 const DEFAULT_AFTER=[
   {t:"Reservás",d:"Confirmás tu lugar con la seña y te mostramos cómo pagarla.",w:""},
@@ -1550,7 +1550,7 @@ async function fileToVoice(file){
 function renderVoiceField(msg){
   const el=$("#voiceField"); if(!el) return;
   const rec=!!_voiceRec, canRec=!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);
-  el.innerHTML=`${builderVoice&&!rec?`<audio controls src="${builderVoice}"></audio>`:""}
+  el.innerHTML=`${builderVoice&&!rec?voicePlayerHtml(builderVoice):""}
     <div class="voice-actions">
       ${canRec?(rec?`<button type="button" class="btn btn-secondary btn-sm" data-voice="stop">⏹ Detener (<span id="voiceSecs">0</span> s)</button>`:`<button type="button" class="btn btn-secondary btn-sm" data-voice="rec">🎙 ${builderVoice?"Grabar de nuevo":"Grabar mensaje"}</button>`):""}
       ${rec?"":`<label class="btn btn-secondary btn-sm voice-up">📎 Subir audio<input type="file" accept="audio/*" data-voice="file" hidden></label>`}
@@ -1922,3 +1922,92 @@ document.addEventListener("click",e=>{
     if(!open) wrap.scrollIntoView({block:"nearest",behavior:"smooth"});
   }
 });
+
+/* ===== v31: reproductor de audio propio (duración visible, progreso animado y barra para adelantar) ===== */
+/* Los audios grabados con MediaRecorder (webm) no traen la duración: el reproductor nativo la calcula al darle play,
+   cargando todo el archivo, y por eso la barra no avanzaba. Acá la duración se resuelve antes (decodificando el audio)
+   y se deja el archivo "adelantable" en segundo plano, así al tocar play arranca y avanza al ritmo real del audio. */
+const vpFmt=s=>{s=Math.max(0,Math.floor(s||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");};
+const vpLong=s=>{s=Math.max(1,Math.round(s));if(s<60)return s+(s===1?" segundo":" segundos");const m=Math.floor(s/60),r=s%60;return m+(m===1?" minuto":" minutos")+(r?" "+r+" s":"");};
+function voicePlayerHtml(src){
+  return `<div class="vp is-loading" data-vp><audio preload="auto" src="${src}"></audio>
+    <button type="button" class="vp-btn" aria-label="Reproducir mensaje de voz" disabled>
+      <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+      <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4.5" height="14" rx="1.2"/><rect x="13.5" y="5" width="4.5" height="14" rx="1.2"/></svg>
+    </button>
+    <div class="vp-main">
+      <div class="vp-bar" role="slider" tabindex="0" aria-label="Progreso del audio" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i class="vp-fill"></i><b class="vp-knob"></b></div>
+      <div class="vp-time"><span class="vp-cur">0:00</span><span class="vp-total">--:--</span></div>
+    </div></div>`;
+}
+async function vpDecodeDuration(src){
+  const Ctx=window.OfflineAudioContext||window.webkitOfflineAudioContext; if(!Ctx) return 0;
+  const buf=await (await fetch(src)).arrayBuffer();
+  const ctx=new Ctx(1,1,44100);
+  const ab=await new Promise((res,rej)=>{const r=ctx.decodeAudioData(buf,res,rej); if(r&&r.then) r.then(res,rej);});
+  return ab.duration||0;
+}
+// Fuerza al navegador a calcular la duración real (y a permitir adelantar) sin que la persona tenga que esperar al darle play.
+function vpFixDuration(a){
+  return new Promise(res=>{
+    if(isFinite(a.duration)&&a.duration>0) return res(a.duration);
+    let done=false;
+    const fin=d=>{if(done)return;done=true;clearTimeout(to);a.removeEventListener("durationchange",ch);a.removeEventListener("loadedmetadata",lm);try{a.currentTime=0;}catch{} res(d);};
+    const ch=()=>{if(isFinite(a.duration)&&a.duration>0) fin(a.duration);};
+    const lm=()=>{if(!isFinite(a.duration)){try{a.currentTime=1e101;}catch{}} else ch();};
+    const to=setTimeout(()=>fin(0),4000);
+    a.addEventListener("durationchange",ch); a.addEventListener("loadedmetadata",lm);
+    if(a.readyState>=1) lm();
+  });
+}
+function vpSetup(box){
+  box.dataset.ready="1";
+  const a=box.querySelector("audio"), btn=box.querySelector(".vp-btn"), bar=box.querySelector(".vp-bar"),
+        fill=box.querySelector(".vp-fill"), knob=box.querySelector(".vp-knob"), cur=box.querySelector(".vp-cur"), tot=box.querySelector(".vp-total");
+  let dur=0, raf=0, drag=false, lastTxt="0:00";
+  const paint=()=>{
+    const t=a.currentTime||0, r=dur?Math.min(1,t/dur):0, txt=vpFmt(t);
+    fill.style.transform=`scaleX(${r})`; knob.style.left=(r*100)+"%";
+    if(txt!==lastTxt){lastTxt=txt;cur.textContent=txt;}
+    bar.setAttribute("aria-valuenow",Math.round(r*100)); bar.setAttribute("aria-valuetext",vpFmt(t)+" de "+vpFmt(dur));
+  };
+  const loop=()=>{paint(); raf=a.paused?0:requestAnimationFrame(loop);};
+  const setDur=d=>{
+    if(dur||!(d>0)||!isFinite(d)) return;
+    dur=d; tot.textContent=vpFmt(d)+" min"; box.classList.remove("is-loading");
+    const note=box.parentElement&&box.parentElement.querySelector("[data-vp-len]"); if(note) note.textContent="Dura "+vpLong(d)+".";
+    paint();
+  };
+  // Duración: la del archivo si ya la trae; si no, se decodifica. En paralelo se deja el audio listo para adelantar.
+  const ready=(async()=>{
+    if(isFinite(a.duration)&&a.duration>0) setDur(a.duration);
+    else vpDecodeDuration(a.currentSrc||a.src).then(setDur,()=>{});
+    const d=await vpFixDuration(a); setDur(d);
+  })();
+  ready.finally(()=>{btn.disabled=false; box.classList.remove("is-loading"); if(!dur) tot.textContent="";});
+  btn.addEventListener("click",()=>{
+    if(!a.paused){a.pause();return;}
+    document.querySelectorAll(".vp audio").forEach(x=>{if(x!==a) x.pause();});
+    if(a.ended||(dur&&a.currentTime>=dur-.05)) a.currentTime=0;
+    const p=a.play(); if(p&&p.catch) p.catch(()=>{});
+  });
+  a.addEventListener("play",()=>{box.classList.add("is-playing");btn.setAttribute("aria-label","Pausar mensaje de voz");cancelAnimationFrame(raf);loop();});
+  a.addEventListener("pause",()=>{box.classList.remove("is-playing");btn.setAttribute("aria-label","Reproducir mensaje de voz");paint();});
+  a.addEventListener("ended",()=>{box.classList.remove("is-playing");btn.setAttribute("aria-label","Reproducir mensaje de voz");try{a.currentTime=0;}catch{} paint();});
+  a.addEventListener("seeked",paint);
+  const seekTo=x=>{if(!dur) return; const rc=bar.getBoundingClientRect(); a.currentTime=Math.min(1,Math.max(0,(x-rc.left)/rc.width))*dur; paint();};
+  bar.addEventListener("pointerdown",e=>{drag=true; try{bar.setPointerCapture(e.pointerId);}catch{} seekTo(e.clientX);});
+  bar.addEventListener("pointermove",e=>{if(drag) seekTo(e.clientX);});
+  ["pointerup","pointercancel"].forEach(ev=>bar.addEventListener(ev,()=>{drag=false;}));
+  bar.addEventListener("keydown",e=>{
+    if(!dur) return; let t=a.currentTime;
+    if(e.key==="ArrowRight") t+=5; else if(e.key==="ArrowLeft") t-=5; else if(e.key==="Home") t=0; else if(e.key==="End") t=dur-.1; else return;
+    e.preventDefault(); a.currentTime=Math.min(dur,Math.max(0,t)); paint();
+  });
+}
+function initVoicePlayers(){document.querySelectorAll(".vp:not([data-ready])").forEach(vpSetup);}
+(function(){
+  let q=0;
+  new MutationObserver(()=>{if(q) return; q=requestAnimationFrame(()=>{q=0; initVoicePlayers();});}).observe(document.body,{childList:true,subtree:true});
+  initVoicePlayers();
+})();
