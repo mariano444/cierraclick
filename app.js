@@ -323,7 +323,7 @@ function renderOptionEditors(){
           <label class="full">Características (una por línea)<textarea data-field="features" rows="3" placeholder="Ej: Envío gratis&#10;Instalación incluida">${escapeHtml(o.features)}</textarea></label>
           <label class="full">Términos y condiciones de esta opción<textarea data-field="terms" rows="2">${escapeHtml(o.terms)}</textarea></label>
           <label class="full">Por qué la recomiendo / frase para el cliente<input data-field="why" maxlength="300" value="${escapeHtml(o.why||"")}" placeholder="Ej: Es la que mejor relación precio-calidad tiene para tu caso."></label>
-          <div class="photo-field full"><span>Fotos de esta opción (opcional · hasta ${MAX_PHOTOS}) <b class="photo-count">${photosOf(o).length}/${MAX_PHOTOS}</b></span>${photosOf(o).length?`<div class="photo-grid">${photosOf(o).map((ph,pi)=>safeImg(ph)?`<figure><img src="${safeImg(ph)}" alt="Foto ${pi+1}"><button type="button" class="photo-x" data-photo-del="${pi}" aria-label="Quitar foto ${pi+1}">×</button></figure>`:"").join("")}</div>`:""}${photosOf(o).length<MAX_PHOTOS?`<input type="file" data-photo accept="image/*" multiple>`:'<small>Llegaste al máximo. Quitá una para agregar otra.</small>'}</div>
+          <div class="photo-field full"><span>Fotos de esta opción (opcional · hasta ${MAX_PHOTOS}) <b class="photo-count">${photosOf(o).length}/${MAX_PHOTOS}</b></span>${photosOf(o).length?`<div class="photo-grid">${photosOf(o).map((ph,pi)=>safeImg(ph)?`<figure><img src="${safeImg(ph)}" alt="Foto ${pi+1}"><button type="button" class="photo-x" data-photo-del="${pi}" aria-label="Quitar foto ${pi+1}">×</button></figure>`:"").join("")}</div>`:""}${photosOf(o).length<MAX_PHOTOS?`<input type="file" data-photo accept="image/*" multiple><button type="button" class="btn btn-secondary btn-sm gal-open-btn" data-gal-open>🖼 Elegir de mi galería</button>`:'<small>Llegaste al máximo. Quitá una para agregar otra.</small>'}</div>
         </div>
       </details>
       <div class="option-total full" data-total>${totalText(o)}</div>
@@ -373,8 +373,9 @@ document.addEventListener("change",async e=>{
   if(!files.length) return toast("Elegí archivos de imagen.");
   if(files.length>room) toast(`Solo entran ${MAX_PHOTOS} fotos por opción: agregué ${room}.`);
   try{
-    const list=photosOf(o);
-    for(const f of files.slice(0,room)) list.push(await resizePhoto(f));
+    const list=photosOf(o), nuevas=[];
+    for(const f of files.slice(0,room)){const ph=await resizePhoto(f); list.push(ph); nuevas.push(ph);}
+    galAdd(nuevas).catch(()=>{});
     o.photos=list; o.photo=list[0]||""; o._open=true; renderOptionEditors(); renderBuilderPreview();
   }catch(err){toast(err.message);}
 });
@@ -570,6 +571,7 @@ function openBuilder(){
 async function createProposal(e){
   e.preventDefault();
   const p=collectBuilderData();
+  galAdd(p.options.flatMap(photosOf)).catch(()=>{});
   if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,options:p.options.map(({photo,photos,...o})=>o),id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined,bonusText:undefined,bonusHours:undefined,slotsLeft:undefined,slotsLabel:undefined,voice:undefined,holdHours:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);await saveProposalExtras(id,p);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
   state.proposals.unshift(p);
   const existing=state.clients.find(c=>c.phone===p.client.phone);
@@ -2012,3 +2014,108 @@ function initVoicePlayers(){document.querySelectorAll(".vp:not([data-ready])").f
   new MutationObserver(()=>{if(q) return; q=requestAnimationFrame(()=>{q=0; initVoicePlayers();});}).observe(document.body,{childList:true,subtree:true});
   initVoicePlayers();
 })();
+
+/* ===== v33: galería de fotos reutilizables ===== */
+/* Toda foto que se sube a una opción se guarda sola en "Mi galería" (sin repetidas). Después se elige con un toque
+   para usarla en otras opciones o presupuestos. Se guarda en este dispositivo y, con Supabase, también en la nube
+   (tabla photo_library de supabase_galeria.sql); si esa tabla no existe, la galería sigue funcionando en el dispositivo. */
+const GAL_MAX=()=>Cloud.on?60:24;
+const galKey=()=>"cc_gallery_"+((typeof currentUser!=="undefined"&&currentUser&&currentUser.id)||"demo");
+const photoHash=s=>{let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(36)+"-"+s.length.toString(36);};
+let _gal=null,_galFor="",_galNoCloud=false;
+function galCloudFail(e){
+  if(_galNoCloud) return; _galNoCloud=true;
+  toast("Tu galería queda solo en este dispositivo: falta ejecutar supabase_galeria.sql en Supabase.");
+}
+function galLocal(){try{return JSON.parse(localStorage.getItem(galKey())||"[]").filter(x=>x&&x.h&&safeImg(x.src));}catch{return [];}}
+function galStore(list){ // si el navegador se queda sin espacio, descarta las más viejas
+  let l=list.slice(0,GAL_MAX());
+  while(l.length){try{localStorage.setItem(galKey(),JSON.stringify(l));return l;}catch{l=l.slice(0,-1);}}
+  try{localStorage.removeItem(galKey());}catch{}
+  return l;
+}
+async function galCloudAdd(it){
+  if(!Cloud.on||_galNoCloud) return;
+  try{await Cloud.rpc("add_gallery_photo",{p_photo:it.src,p_hash:it.h});}catch(e){galCloudFail(e);}
+}
+async function galGet(force){
+  if(_gal&&_galFor===galKey()&&!force) return _gal;
+  _galFor=galKey(); _gal=galLocal();
+  if(Cloud.on&&currentUser&&!_galNoCloud){
+    try{
+      const sb=await Auth.client();
+      const {data,error}=await sb.from("photo_library").select("hash,photo,created_at").order("created_at",{ascending:false}).limit(GAL_MAX());
+      if(error) throw error;
+      const cloud=data.filter(r=>safeImg(r.photo)).map(r=>({h:r.hash,src:r.photo})), have=new Set(cloud.map(x=>x.h));
+      const soloLocal=_gal.filter(x=>!have.has(x.h));
+      _gal=galStore([...soloLocal,...cloud]);
+      soloLocal.forEach(galCloudAdd); // las que estaban solo en este dispositivo se suben
+    }catch(e){galCloudFail(e);}
+  }
+  return _gal;
+}
+async function galAdd(srcs){
+  const l=await galGet(), added=[];
+  for(const src of srcs||[]){
+    if(!safeImg(src)) continue; const h=photoHash(src);
+    if(l.some(x=>x.h===h)||added.some(x=>x.h===h)) continue;
+    added.push({h,src});
+  }
+  if(!added.length) return;
+  _gal=galStore([...added.reverse(),...l]);
+  added.forEach(galCloudAdd);
+}
+async function galDelete(h){
+  _gal=galStore((await galGet()).filter(x=>x.h!==h));
+  if(Cloud.on&&!_galNoCloud){try{const sb=await Auth.client(); const {error}=await sb.from("photo_library").delete().eq("hash",h); if(error) throw error;}catch(e){galCloudFail(e);}}
+}
+function openGallery(idx){
+  const o=builderOptions[idx]; if(!o) return;
+  const room=MAX_PHOTOS-photosOf(o).length;
+  if(room<=0) return toast(`Esta opción ya tiene ${MAX_PHOTOS} fotos. Quitá una para agregar otra.`);
+  const used=new Set(photosOf(o).map(photoHash)), sel=[], opener=document.activeElement;
+  const wrap=document.createElement("div");
+  wrap.className="gal-modal"; wrap.setAttribute("role","dialog"); wrap.setAttribute("aria-modal","true"); wrap.setAttribute("aria-label","Mi galería de fotos");
+  wrap.innerHTML=`<div class="gal-sheet">
+    <header><h3>Mi galería</h3><button type="button" class="gal-close" data-gal-close aria-label="Cerrar">×</button></header>
+    <p class="gal-hint">Tocá las fotos que quieras usar en esta opción (hasta ${room}).</p>
+    <div class="gal-grid"><p class="gal-empty">Cargando tus fotos…</p></div>
+    <footer><button type="button" class="btn btn-secondary" data-gal-close>Cancelar</button><button type="button" class="btn btn-primary" data-gal-ok disabled>Agregar</button></footer></div>`;
+  document.body.appendChild(wrap); document.body.classList.add("gal-open");
+  const grid=wrap.querySelector(".gal-grid"), ok=wrap.querySelector("[data-gal-ok]");
+  let list=[];
+  const close=()=>{document.removeEventListener("keydown",onKey,true); wrap.remove(); document.body.classList.remove("gal-open"); if(opener&&opener.focus&&document.contains(opener)) try{opener.focus();}catch{}};
+  const onKey=e=>{if(e.key==="Escape"){e.stopPropagation(); close();}};
+  document.addEventListener("keydown",onKey,true);
+  const paint=()=>{
+    ok.disabled=!sel.length; ok.textContent=sel.length?`Agregar ${sel.length} ${sel.length===1?"foto":"fotos"}`:"Agregar";
+    if(!list.length){grid.innerHTML='<p class="gal-empty">Todavía no hay fotos guardadas. Las que subas a una opción se guardan acá solas para que las reutilices.</p>'; return;}
+    grid.innerHTML=list.map((x,i)=>{const u=used.has(x.h), s=sel.includes(x.h);
+      return `<div class="gal-item${u?" is-used":""}${s?" is-sel":""}"><button type="button" class="gal-pick" data-h="${x.h}" aria-pressed="${s}" aria-label="Foto ${i+1}${u?" (ya está en esta opción)":""}"><img src="${x.src}" alt="" loading="lazy"></button><span class="gal-check" aria-hidden="true">✓</span>${u?'<span class="gal-tag">Ya está</span>':""}<button type="button" class="gal-del" data-del="${x.h}" aria-label="Borrar de mi galería">×</button></div>`;}).join("");
+  };
+  wrap.addEventListener("click",async e=>{
+    if(e.target===wrap||e.target.closest("[data-gal-close]")) return close();
+    const del=e.target.closest("[data-del]");
+    if(del){
+      if(!confirm("¿Borrar esta foto de tu galería? Las propuestas que ya la usan no se modifican.")) return;
+      const h=del.dataset.del; await galDelete(h); list=list.filter(x=>x.h!==h); const k=sel.indexOf(h); if(k>=0) sel.splice(k,1); return paint();
+    }
+    const pick=e.target.closest("[data-h]");
+    if(pick){
+      const h=pick.dataset.h; if(used.has(h)) return toast("Esa foto ya está en esta opción.");
+      const k=sel.indexOf(h);
+      if(k>=0) sel.splice(k,1); else if(sel.length>=room) return toast(`Solo podés agregar ${room} ${room===1?"foto más":"fotos más"} a esta opción.`); else sel.push(h);
+      return paint();
+    }
+    if(e.target.closest("[data-gal-ok]")){
+      const add=sel.map(h=>(list.find(x=>x.h===h)||{}).src).filter(Boolean);
+      o.photos=[...photosOf(o),...add].slice(0,MAX_PHOTOS); o.photo=o.photos[0]||""; o._open=true;
+      close(); renderOptionEditors(); renderBuilderPreview(); toast(add.length===1?"Foto agregada.":`${add.length} fotos agregadas.`);
+    }
+  });
+  galGet().then(l=>{list=l.slice(); paint(); const f=grid.querySelector(".gal-pick:not(:disabled)")||wrap.querySelector("[data-gal-close]"); if(f&&f.focus) f.focus();}).catch(()=>{list=[]; paint();});
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest&&e.target.closest("[data-gal-open]"); if(!b) return;
+  const row=b.closest("[data-idx]"); if(row) openGallery(+row.dataset.idx);
+});
