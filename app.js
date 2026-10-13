@@ -45,6 +45,7 @@ const MAX_OPTIONS=4;
 const MAX_PHOTOS=10;
 /* ===== Nombre opcional, saludo según la hora y varias fotos por opción ===== */
 const NO_NAME="Cliente";
+function fullName(n){const f=String(n||"").trim().replace(/\s+/g," ");return f===NO_NAME?"":f;}
 function firstName(n){const f=String(n||"").trim().split(/\s+/)[0]||"";return f===NO_NAME?"":f;}
 function saludoHora(d=new Date()){const h=d.getHours();return h>=6&&h<12?"Buen día":h>=12&&h<20?"Buenas tardes":"Buenas noches";}
 function hello(name){const f=firstName(name);return f?`${saludoHora()}, ${f}`:saludoHora();}
@@ -1076,12 +1077,12 @@ function getReviews(){
   const b=state.business||{};
   if(Array.isArray(b.reviews)&&b.rating) return {avg:Number(b.rating.avg)||0,count:Number(b.rating.count)||0,
     list:b.reviews.map(r=>({stars:r.stars,comment:r.comment,photo:r.photo||"",author:r.author,source:r.source,at:r.created_at?new Date(r.created_at).getTime():(r.at||0)}))};
-  const rs=[...(state.proposals||[]).filter(p=>p.review&&p.review.stars).map(p=>({stars:p.review.stars,comment:p.review.comment||"",photo:p.review.photo||"",author:firstName(p.client.name),source:"proposal",at:p.review.at||0})),...(state.extReviews||[]).map(r=>({...r,source:"external"}))];
+  const rs=[...(state.proposals||[]).filter(p=>p.review&&p.review.stars).map(p=>({stars:p.review.stars,comment:p.review.comment||"",photo:p.review.photo||"",author:fullName(p.client.name),source:"proposal",at:p.review.at||0})),...(state.extReviews||[]).map(r=>({...r,source:"external"}))];
   const c=rs.length;
   return {avg:c?rs.reduce((x,r)=>x+r.stars,0)/c:0,count:c,list:rs.filter(r=>r.comment).sort((x,y)=>y.at-x.at).slice(0,8)};
 }
 function ratingChip(){const r=getReviews(); return r.count?`<span class="rating-chip">★ ${fmtAvg(r.avg)} · ${r.count} ${r.count>1?"opiniones":"opinión"}</span>`:"";}
-const reviewCard=r=>{const nm=(r.author||"Cliente").trim()||"Cliente";
+const reviewCard=r=>{const nm=String(r.author||"Cliente").trim().replace(/\s+/g," ")||"Cliente";
   return `<figure class="review"><div class="review-top"><span class="review-av${safeImg(r.photo)?" has-photo":""}" aria-hidden="true">${safeImg(r.photo)?`<img src="${safeImg(r.photo)}" alt="" loading="lazy">`:escapeHtml(nm.charAt(0).toUpperCase())}</span><div><div class="review-stars" role="img" aria-label="${Number(r.stars)||0} de 5 estrellas">${stars(r.stars)}</div><figcaption>${escapeHtml(nm)}<small>${r.source==="external"?"Cliente del negocio":"Cliente verificado"}</small></figcaption></div></div>${r.comment?`<blockquote>${escapeHtml(r.comment)}</blockquote>`:""}</figure>`;};
 const revRow=list=>`<div class="rev-row" tabindex="0" role="group" aria-label="Opiniones de clientes">${list.map(reviewCard).join("")}</div>`;
 function reviewsMarkup(){
@@ -1160,7 +1161,7 @@ function localSubmitReq(t,stars,comment,photo=""){
   const r=(state.reviewRequests||{})[t]; if(!r||r.used) throw new Error("Este link ya no está disponible");
   r.used=true;
   if(r.proposalId){const p=state.proposals.find(x=>x.id===r.proposalId); if(p) p.review={stars,comment,photo,at:Date.now()};}
-  else (state.extReviews=state.extReviews||[]).push({stars,comment,photo,author:r.name.split(" ")[0],at:Date.now()});
+  else (state.extReviews=state.extReviews||[]).push({stars,comment,photo,author:fullName(r.name),at:Date.now()});
   saveState();
 }
 async function createReviewToken(name,phone,proposalId){
@@ -1203,7 +1204,7 @@ async function openReviewLink(token){
     card.innerHTML=`<div class="public-card"><div class="public-greeting">${used?"Ya recibimos tu opinión 🙌":"Este link no está disponible"}</div><p style="color:#64748b">${used?"¡Gracias por tomarte el tiempo!":"Pedile a quien te lo envió que te mande uno nuevo."}</p></div>`;
   }else{
     const rp={review:null,_token:token};
-    card.innerHTML=`<div class="public-card"><div class="public-brand">${avatarHtml()}${escapeHtml((state.business.name||"").toUpperCase())}${ratingChip()}</div><div class="public-greeting">${escapeHtml(hello(info.client))} 👋</div><p style="color:#475569">Contanos cómo fue tu experiencia con ${escapeHtml(state.business.name||"el negocio")}.</p>${reviewFormMarkup(rp)}</div>`;
+    card.innerHTML=`<div class="public-card"><div class="public-brand">${avatarHtml()}${escapeHtml((state.business.name||"").toUpperCase())}${ratingChip()}</div><div class="public-greeting">${escapeHtml(hello(info.client))} 👋</div><p style="color:#475569">Contanos cómo fue tu experiencia con ${escapeHtml(state.business.name||"el negocio")}.</p>${reviewFormMarkup(rp)}${reviewsMarkup()}</div>`;
     attachReview(rp);
   }
   openModal("publicModal"); document.documentElement.classList.add("proposal-ready");
