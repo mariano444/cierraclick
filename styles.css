@@ -796,3 +796,29 @@ html.proposal-mode .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 /* v32: reseñas con nombre completo y visibles en el link de opinión */
 .review figcaption{overflow-wrap:anywhere;line-height:1.25}
 .public-card>.reviews-box{margin-top:22px}
+
+/* v33: galería de fotos reutilizables */
+body.gal-open{overflow:hidden}
+.toast{z-index:200}
+.gal-open-btn{margin-top:8px}
+.gal-modal{position:fixed;inset:0;z-index:150;display:grid;place-items:end center;background:rgba(15,23,42,.55)}
+.gal-sheet{background:#fff;width:min(560px,100%);max-height:88vh;max-height:88dvh;display:flex;flex-direction:column;border-radius:20px 20px 0 0;box-shadow:0 -20px 50px rgba(15,23,42,.25)}
+@media(min-width:640px){.gal-modal{place-items:center;padding:20px}.gal-sheet{border-radius:20px}}
+.gal-sheet header{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 4px}
+.gal-sheet h3{margin:0;font-size:18px}
+.gal-close{width:36px;height:36px;border:0;border-radius:50%;background:var(--soft);font-size:22px;line-height:1;cursor:pointer;color:var(--ink)}
+.gal-hint{margin:0;padding:0 18px 10px;color:var(--muted);font-size:14px}
+.gal-grid{flex:1;min-height:140px;overflow:auto;padding:4px 18px 14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;align-content:start}
+.gal-empty{grid-column:1/-1;margin:18px 0;text-align:center;color:var(--muted);font-size:14px}
+.gal-item{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;border:3px solid transparent;background:var(--soft)}
+.gal-pick{all:unset;display:block;width:100%;height:100%;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.gal-pick:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.gal-pick img{width:100%;height:100%;object-fit:cover;display:block}
+.gal-item.is-sel{border-color:var(--accent)}
+.gal-check{position:absolute;left:6px;top:6px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:800;display:none;place-items:center}
+.gal-item.is-sel .gal-check{display:grid}
+.gal-del{position:absolute;right:6px;top:6px;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:rgba(15,23,42,.72);color:#fff;font-size:16px;line-height:1;cursor:pointer}
+.gal-item.is-used .gal-pick{opacity:.45;cursor:default}
+.gal-tag{position:absolute;left:6px;bottom:6px;padding:2px 8px;border-radius:99px;background:rgba(15,23,42,.78);color:#fff;font-size:11px;font-weight:700}
+.gal-sheet footer{display:flex;gap:10px;justify-content:flex-end;padding:12px 18px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+.gal-sheet footer .btn:disabled{opacity:.5;cursor:not-allowed}
