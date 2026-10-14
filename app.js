@@ -173,14 +173,14 @@ const Auth={
 const Cloud={
   get on(){return Auth.remote;},
   async rpc(name,args={}){const {data,error}=await (await Auth.client()).rpc(name,args);if(error)throw error;return data;},
-  proposal(row){return {...row,lostReason:row.lost_reason,recontactAt:row.recontact_at?new Date(row.recontact_at).getTime():null,client:{name:row.clients?.name||"Cliente",phone:row.clients?.phone||""},expiresAt:row.expires_at,cashDiscount:Number(row.cash_discount||0),depositPct:Number(row.deposit_pct||0),chosenOption:row.chosen_option_id,createdAt:row.created_at,acceptedAt:row.accepted_at,lastViewedAt:row.last_viewed_at,lastFollowUpAt:row.last_follow_up_at,proofSentAt:row.proof_sent_at,depositPaidAt:row.deposit_paid_at,depositStarted:row.deposit_started||0,followUps:row.follow_ups||0,holdHours:row.hold_hours||0,payExitAt:row.pay_exit_at?new Date(row.pay_exit_at).getTime():null,bonusText:row.bonus_text||"",bonusHours:row.bonus_hours||0,slotsLeft:row.slots_left??null,slotsLabel:row.slots_label||"",acceptedName:row.accepted_name||"",termsAcceptedAt:row.terms_accepted_at||null,options:(row.proposal_options||[]).sort((a,b)=>a.position-b.position).map(o=>({id:o.id,name:o.name,price:Number(o.price),discountType:o.discount_type,discountValue:Number(o.discount_value),description:o.description,hasInstallments:o.has_installments,installments:o.installments,hasWarranty:o.has_warranty,warranty:o.warranty,features:o.features,terms:o.terms,recommended:o.recommended}))};},
+  proposal(row){return {...row,offerUpdate:row.offer_update||null,lostReason:row.lost_reason,recontactAt:row.recontact_at?new Date(row.recontact_at).getTime():null,client:{name:row.clients?.name||"Cliente",phone:row.clients?.phone||""},expiresAt:row.expires_at,cashDiscount:Number(row.cash_discount||0),depositPct:Number(row.deposit_pct||0),chosenOption:row.chosen_option_id,createdAt:row.created_at,acceptedAt:row.accepted_at,lastViewedAt:row.last_viewed_at,lastFollowUpAt:row.last_follow_up_at,proofSentAt:row.proof_sent_at,depositPaidAt:row.deposit_paid_at,depositStarted:row.deposit_started||0,followUps:row.follow_ups||0,holdHours:row.hold_hours||0,payExitAt:row.pay_exit_at?new Date(row.pay_exit_at).getTime():null,bonusText:row.bonus_text||"",bonusHours:row.bonus_hours||0,slotsLeft:row.slots_left??null,slotsLabel:row.slots_label||"",acceptedName:row.accepted_name||"",termsAcceptedAt:row.terms_accepted_at||null,options:(row.proposal_options||[]).sort((a,b)=>a.position-b.position).map(o=>({id:o.id,name:o.name,price:Number(o.price),discountType:o.discount_type,discountValue:Number(o.discount_value),description:o.description,hasInstallments:o.has_installments,installments:o.installments,hasWarranty:o.has_warranty,warranty:o.warranty,features:o.features,terms:o.terms,recommended:o.recommended}))};},
   async hydrate(){
     if(!this.on||!currentUser)return;
     const sb=await Auth.client(); await this.rpc("refresh_expired").catch(()=>{});
     const [biz,props,catalog,events]=await Promise.all([sb.from("businesses").select("*").eq("owner_id",currentUser.id).single(),sb.from("proposals").select("*,clients(name,phone),proposal_options!proposal_options_proposal_id_fkey(*)").order("created_at",{ascending:false}),sb.from("catalog_items").select("*").order("updated_at",{ascending:false}),sb.from("proposal_events").select("type,message,created_at").order("created_at",{ascending:false}).limit(12)]);
     if(biz.error||props.error||catalog.error||events.error)throw biz.error||props.error||catalog.error||events.error;
     const b=biz.data;
-    state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,depositPolicy:b.deposit_policy,faq:b.faq,photo:b.photo||"",alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note,afterSteps:b.after_steps||""},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
+    state={...structuredClone(defaultState),business:{name:b.name,whatsapp:b.whatsapp,paymentLink:b.payment_link,brandColor:b.brand_color,holder:b.holder,bank:b.bank,cbu:b.cbu,depositPolicy:b.deposit_policy,faq:b.faq,photo:b.photo||"",alias:b.alias,cuit:b.cuit,transferNote:b.transfer_note,afterSteps:b.after_steps||"",profile:profileOf(b.profile)},proposals:props.data.map(x=>this.proposal(x)),catalog:catalog.data.map(x=>({id:x.id,kind:x.kind,name:x.name,price:Number(x.price),discountType:x.discount_type,discountValue:Number(x.discount_value),description:x.description,hasInstallments:x.has_installments,installments:x.installments,hasWarranty:x.has_warranty,warranty:x.warranty,features:x.features,terms:x.terms})),clients:[],activity:events.data.map(x=>({icon:{created:"📝",view:"👀",select:"⭐",accept:"✅",deposit_paid:"💰",proof:"💸",follow_up:"🔔",renew:"🔄"}[x.type]||"•",text:x.message,time:relativeTime(x.created_at)}))};
     state.clients=Object.values(state.proposals.reduce((a,p)=>{const k=p.client.phone||p.client.name;a[k]||(a[k]={...p.client,proposals:0});a[k].proposals++;return a;},{}));applyRevCache();fillSettings();renderDashboard();
   },
   // RPC anónimo por fetch: no necesita cargar supabase-js (~100 KB desde un CDN), que era lo que más demoraba la propuesta del cliente.
@@ -191,17 +191,21 @@ const Cloud={
   },
   async publicProposal(id){
     // Las 4 consultas salen a la vez (antes: 1 y después 3), y las extras son opcionales.
-    const [r,x,ox,v3,ph]=await Promise.all([
+    const [r,x,ox,v3,ph,pf,ou]=await Promise.all([
       this.pub("get_public_proposal",{p_id:id}),
       this.pub("get_public_extras",{p_id:id}).catch(()=>null),
       this.pub("get_public_option_extras",{p_id:id}).then(v=>({v}),()=>null),
       this.pub("get_public_v3",{p_id:id}).catch(()=>null),
-      this.pub("get_public_option_photos",{p_id:id}).catch(()=>null)]);
+      this.pub("get_public_option_photos",{p_id:id}).catch(()=>null),
+      this.pub("get_public_business_profile",{p_id:id}).catch(()=>null),
+      this.pub("get_public_offer_update",{p_id:id}).catch(()=>null)]);
     if(!r) return r;
     if(x) r.business={...(r.business||{}),...x};
     if(ox){const m=ox.v; if(m&&r.options) r.options.forEach(o=>{const e=m[o.id]; if(e){o.why=e.why;o.photo=e.photo;}}); r._ex=true;}
     if(ph&&r.options) r.options.forEach(o=>{const l=ph[o.id]; if(Array.isArray(l)&&l.length) o.photos=l;});
     if(v3){applyV3(r,v3); r.business={...(r.business||{}),afterSteps:v3.afterSteps||""};}
+    if(pf&&typeof pf==="object") r.business={...(r.business||{}),profile:profileOf(pf)};
+    if(ou&&typeof ou==="object"){r.offerUpdate=ou; applyOfferUpdate(r);}
     return r;
   }
 };
@@ -225,6 +229,7 @@ function fillSettings(){
   const f=$("#settingsForm"), b=state.business;
   Object.entries({businessName:b.name,whatsapp:b.whatsapp,paymentLink:b.paymentLink,brandColor:b.brandColor,holder:b.holder,bank:b.bank,cbu:b.cbu,alias:b.alias,cuit:b.cuit,transferNote:b.transferNote,depositPolicy:b.depositPolicy,faq:b.faq,afterSteps:b.afterSteps})
     .forEach(([k,v])=>{if(f.elements[k]) f.elements[k].value=v??"";});
+  fillProfile();
 }
 async function markPaid(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
@@ -374,7 +379,8 @@ document.addEventListener("change",async e=>{
   if(files.length>room) toast(`Solo entran ${MAX_PHOTOS} fotos por opción: agregué ${room}.`);
   try{
     const list=photosOf(o), nuevas=[];
-    for(const f of files.slice(0,room)){const ph=await resizePhoto(f); list.push(ph); nuevas.push(ph);}
+    if(Cloud.on) toast("Subiendo fotos…");
+    for(const f of files.slice(0,room)){const ph=await storePhoto(await resizePhoto(f)); list.push(ph); nuevas.push(ph);}
     galAdd(nuevas).catch(()=>{});
     o.photos=list; o.photo=list[0]||""; o._open=true; renderOptionEditors(); renderBuilderPreview();
   }catch(err){toast(err.message);}
@@ -386,12 +392,12 @@ document.addEventListener("click",e=>{
 });
 async function saveOptionExtras(id,p){
   if(!p.options.some(o=>o.why||photosOf(o).length)) return;
-  try{await Cloud.rpc("set_option_extras",{p_id:id,p_extras:p.options.map(o=>({why:o.why||"",photo:photosOf(o)[0]||""}))});
+  try{await rpcPhotos("set_option_extras",c=>({p_id:id,p_extras:p.options.map(o=>({why:o.why||"",photo:c(photosOf(o)[0]||"")}))}));
     const r=state.proposals.find(x=>x.id===id); if(r) r.options.forEach((o,i)=>{if(p.options[i]){o.why=p.options[i].why;o.photo=photosOf(p.options[i])[0]||"";}});
   }catch(e){toast("La propuesta se creó, pero la foto y la frase no se guardaron: falta ejecutar supabase_fotos.sql.");}
   // Galería: solo hace falta cuando alguna opción tiene 2 o más fotos.
   if(p.options.some(o=>photosOf(o).length>1)){
-    try{await Cloud.rpc("set_option_photos",{p_id:id,p_photos:p.options.map(o=>photosOf(o))});
+    try{await rpcPhotos("set_option_photos",c=>({p_id:id,p_photos:p.options.map(o=>photosOf(o).map(c))}));
       const r=state.proposals.find(x=>x.id===id); if(r) r.options.forEach((o,i)=>{if(p.options[i]) o.photos=photosOf(p.options[i]);});
     }catch(e){toast("Se guardó solo la primera foto de cada opción: falta ejecutar supabase_v4_fotos_nombre.sql en Supabase.");}
   }
@@ -496,20 +502,23 @@ function publicProposalMarkup(p, mode="full"){
   return `
     <div class="public-card" data-public-id="${escapeHtml(p.id)}" style="--pc:${brandStyle()}">
       <div class="public-brand">${avatarHtml()}${escapeHtml(state.business.name).toUpperCase()}${ratingChip()}</div>
+      ${whoChip()}
       <div class="public-greeting">${escapeHtml(hello(p.client.name))} 👋</div>
       <div class="public-title">${escapeHtml(p.title)}</div>
       ${mode==="full"?`<span class="valid">${expiryLine(p)}</span>`:""}
+      ${offerBannerMarkup(p)}
       ${p.status!=="expired"?voiceMarkup(p):""}
       ${mode==="full"&&p.status!=="expired"?`<div class="steps"><span><b>1</b> ${multi?"Elegí tu opción":"Revisá la propuesta"}</span><span><b>2</b> Aceptá</span><span><b>3</b> Reservá${p.depositPct>0?" con seña":""}</span></div><ul class="trust-strip"><li>🔒 Sin cargo al aceptar</li>${p.options.some(o=>o.hasWarranty&&o.warranty)?"<li>🛡️ Garantía</li>":""}<li>💬 Por WhatsApp</li></ul>`:""}
       ${p.status!=="expired"?perksMarkup(p):""}
       ${p.status!=="expired"?compareMarkup(p,mode):""}
       ${multi&&mode==="full"&&p.status!=="expired"?pickHelperMarkup(p):""}${multi&&mode==="full"?carouselTabsMarkup(p):""}<div class="choice-grid n${p.options.length}${multi&&mode==="full"?" cc-carousel":""}"${multi&&mode==="full"?' tabindex="0" role="group" aria-roledescription="carrusel" aria-label="Opciones de la propuesta"':""}>${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
-      ${mode==="full"&&p.status!=="expired"?reviewsMarkup():""}
+      ${p.status!=="expired"?'<h4 class="flow-h">Cómo se paga y qué incluye</h4>':""}
       <div class="public-includes" data-sec="incluye">${includes}</div>
       <div data-sec="pago">${payBlock(p)}</div>
       <p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
       ${p.status!=="expired"?afterMarkup(p):""}
-      ${mode==="full"&&p.status!=="expired"?`${assuranceMarkup(p)}<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div>${acceptFormMarkup(p)}<div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
+      ${p.status!=="expired"?whoMarkup():""}${mode==="full"&&p.status!=="expired"?reviewsMarkup()+assuranceMarkup(p):""}
+      ${mode==="full"&&p.status!=="expired"?`<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div>${acceptFormMarkup(p)}<div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
       <div class="public-actions">
         ${mode==="full"&&p.status!=="expired"?`<div class="cta-note" id="ctaNote"></div>`:""}
         ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${escapeHtml(ctaLabel(p,chosenOf(p)))}</button>`:''}
@@ -551,8 +560,8 @@ function renderStrength(p){
     [!multi||O.some(o=>o.recommended),"Marcá una opción como recomendada","Cuando hay varias, elegir una guía al cliente y evita que postergue."],
     [p.depositPct>0,"Pedí una seña","Una seña convierte el \"me interesa\" en un compromiso."],
     [O.some(o=>o.why||photosOf(o).length),"Sumá una foto o el \"por qué la recomiendo\"","Una línea personal hace que se sienta atendido, no un presupuesto más."],
-    [O.some(o=>(o.hasInstallments&&o.installments>1)||(Number(o.discountValue)||0)>0)||p.cashDiscount>0,"Ofrecé cuotas o un descuento","Le da una razón concreta para decidir hoy."],
-    [!!(p.bonusText||p.slotsLeft>0),"Agregá un bonus por reservar a tiempo o cupos reales","Solo si es verdad: una fecha límite concreta ayuda a decidir."],
+    [O.some(o=>o.hasInstallments&&o.installments>1)||!!p.bonusText||p.slotsLeft>0||p.holdHours>0,"Dale una razón para decidir hoy","Cuotas, un bonus por reservar a tiempo o cupos reales ayudan a decidir sin bajar tu precio. Usá solo lo que sea verdad."],
+    [!profileEmpty(profileOf(b.profile)),"Completá «Quién te atiende» en Configuración","Zona, experiencia y trabajos realizados dan confianza antes de pedir la seña."],
     [O.some(o=>o.hasWarranty),"Indicá la garantía","Reduce el miedo a equivocarse."],
     [faqItems(b).length>0,"Cargá preguntas frecuentes en Configuración","Responde las dudas antes de que se las lleve a otro lado."],
     [daysLeft(p)<=10,"Poné un vencimiento más corto (hasta 10 días)","Un plazo claro evita que la propuesta se enfríe."]
@@ -603,7 +612,7 @@ async function openPublic(id,preview=false,quiet=false){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
   if(Cloud.on&&currentUser&&!p._ex){p._ex=true;try{const ox=await Cloud.rpc("get_public_option_extras",{p_id:id});(p.options||[]).forEach(o=>{const x=ox&&ox[o.id];if(x){o.why=x.why;o.photo=x.photo;}});}catch(e){}
     try{const ph=await Cloud.rpc("get_public_option_photos",{p_id:id});(p.options||[]).forEach(o=>{const l=ph&&ph[o.id];if(Array.isArray(l)&&l.length)o.photos=l;});}catch(e){}}
-  if(Cloud.on&&currentUser&&!p._v3){p._v3=true;try{const v=await Cloud.rpc("get_public_v3",{p_id:id});if(v)applyV3(p,v);}catch(e){}}
+  if(Cloud.on&&currentUser&&!p._v3){p._v3=true;try{const v=await Cloud.rpc("get_public_v3",{p_id:id});if(v)applyV3(p,v);}catch(e){} applyOfferUpdate(p);}
   currentProposalId=id;
   if(!preview){
   p.views=(p.views||0)+1; p.lastViewedAt=Date.now();
@@ -753,10 +762,11 @@ function renderDashboard(){
   const paidBtn=p=>(p.status==="accepted"&&!p.depositPaidAt)?`<button class="text-btn" data-paid="${p.id}">✔ Seña recibida</button>`:"";
   const followBtn=p=>p.status==="lost"?`<button class="text-btn" data-follow="${p.id}">💬 Retomar</button>`:(p.status==="accepted"&&!p.depositPaidAt&&p.depositPct>0)?`<button class="text-btn" data-follow="${p.id}">💸 Pedir seña</button>`:(p.status==="sent"||p.status==="viewed")?`<button class="text-btn" data-follow="${p.id}">${(p.followUps||0)>=3?"✉️ Cierre amable":"🔔 Seguimiento"}</button>`:"";
   const reviewBtn=p=>p.status==="accepted"?`<button class="text-btn" data-ask-review="${p.id}">⭐ Pedir opinión</button>`:"";
+  const improveBtn=p=>["sent","viewed","expired"].includes(p.status)?`<button class="text-btn" data-improve="${p.id}">✨ Mejorar oferta</button>`:"";
   const lostBtn=p=>["sent","viewed","expired"].includes(p.status)?`<button class="text-btn" data-lost="${p.id}">✖ Perdida</button>`:"";
   const items=todayItems();
   $("#todayCount").textContent=items.length||"";
-  $("#todayList").innerHTML=items.map(({p,reason})=>`<div class="proposal-item"><div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${heat(p)} · ${reason}</span></div><div>${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:followBtn(p)+paidBtn(p)+lostBtn(p)}<button class="text-btn" data-open="${p.id}">Abrir</button></div></div>`).join("")||'<p style="color:#64748b">🎉 Todo al día: no hay propuestas para seguir hoy.</p>';
+  $("#todayList").innerHTML=items.map(({p,reason})=>`<div class="proposal-item"><div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${heat(p)} · ${reason}</span></div><div>${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>${improveBtn(p)}`:followBtn(p)+paidBtn(p)+improveBtn(p)+lostBtn(p)}<button class="text-btn" data-open="${p.id}">Abrir</button></div></div>`).join("")||'<p style="color:#64748b">🎉 Todo al día: no hay propuestas para seguir hoy.</p>';
   $("#hotList").innerHTML=proposals.slice(0,5).map(p=>`
     <div class="proposal-item">
       <div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${p.views||0} vistas</span></div>
@@ -769,7 +779,7 @@ function renderDashboard(){
     <td>${money(finalPrice(chosenOf(p)))}</td>
     <td><span class="badge ${p.status}">${statusLabel(p.status)}</span><br><small>${heat(p)}${engBadge(p)}</small></td>
     <td>${p.views||0}</td><td>${relativeTime(p.createdAt)}</td>
-    <td class="actions">${followBtn(p)}${paidBtn(p)}${lostBtn(p)}${reviewBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">📊 Atención</button></td></tr>`).join("");
+    <td class="actions">${followBtn(p)}${paidBtn(p)}${improveBtn(p)}${lostBtn(p)}${reviewBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">📊 Atención</button></td></tr>`).join("");
   $("#clientsGrid").innerHTML=(state.clients||[]).map(c=>`<div class="client"><h3>${escapeHtml(c.name)}</h3><p>${escapeHtml(c.phone)}</p><p>${c.proposals||0} propuesta(s)</p></div>`).join("");
   renderPerformance();
   $$("[data-open]").forEach(b=>b.addEventListener("click",()=>openPublic(b.dataset.open,true)));
@@ -1050,7 +1060,9 @@ function salesMetrics(ps){
 }
 /* ===== Foto de perfil, estrellas y comentarios ===== */
 const OK_IMG=/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/;
-const safeImg=v=>OK_IMG.test(v||"")?v:"";
+const STORE_PREFIX=String(CFG.supabaseUrl||"").replace(/\/+$/,"")+"/storage/v1/object/public/fotos/";
+const OK_STORE=v=>!!CFG.supabaseUrl&&typeof v==="string"&&v.startsWith(STORE_PREFIX)&&/^[A-Za-z0-9\/._-]{1,200}$/.test(v.slice(STORE_PREFIX.length));
+const safeImg=v=>(OK_IMG.test(v||"")||OK_STORE(v))?v:"";
 const stars=n=>"★".repeat(n)+"☆".repeat(5-n);
 const fmtAvg=v=>(Math.round(v*10)/10).toFixed(1).replace(".",",");
 function resizeSquare(file,size=256,q=.82){
@@ -1395,8 +1407,9 @@ function bind(){
     const g=k=>String(fd.get(k)||"").trim(), cbu=g("cbu").replace(/\s/g,""), alias=g("alias");
     if(cbu&&!/^\d{22}$/.test(cbu)) return toast("El CBU/CVU debe tener 22 números.");
     if(alias&&!/^[A-Za-z0-9.\-]{6,20}$/.test(alias)) return toast("El alias debe tener 6 a 20 letras, números, puntos o guiones.");
-    state.business={...state.business,name:g("businessName"),whatsapp:g("whatsapp"),paymentLink:g("paymentLink"),brandColor:g("brandColor"),holder:g("holder"),bank:g("bank"),cbu,alias,cuit:g("cuit"),transferNote:g("transferNote"),depositPolicy:g("depositPolicy"),faq:g("faq"),afterSteps:g("afterSteps")};
+    state.business={...state.business,name:g("businessName"),whatsapp:g("whatsapp"),paymentLink:g("paymentLink"),brandColor:g("brandColor"),holder:g("holder"),bank:g("bank"),cbu,alias,cuit:g("cuit"),transferNote:g("transferNote"),depositPolicy:g("depositPolicy"),faq:g("faq"),afterSteps:g("afterSteps"),profile:readProfile()};
     if(Cloud.on){try{const sb=await Auth.client();const {error}=await sb.from("businesses").update({name:state.business.name,whatsapp:state.business.whatsapp,payment_link:state.business.paymentLink,deposit_policy:state.business.depositPolicy||"",photo:state.business.photo||"",faq:state.business.faq||"",brand_color:state.business.brandColor,holder:state.business.holder,bank:state.business.bank,cbu,alias,cuit:state.business.cuit,transfer_note:state.business.transferNote}).eq("owner_id",currentUser.id);if(error)throw error;{const r2=await sb.from("businesses").update({after_steps:state.business.afterSteps||""}).eq("owner_id",currentUser.id);if(r2.error)toast("Guardé el resto, pero «Qué pasa después» necesita ejecutar supabase_v3.sql en Supabase.");}}catch(ex){return toast(ex.message||"No se pudo guardar la configuración.");}}
+    if(Cloud.on){try{await Cloud.rpc("save_business_profile",{p:state.business.profile});}catch(ex){toast(isMissingFn(ex)?"Guardé el resto, pero «Quién te atiende» necesita ejecutar supabase_v6_oferta_perfil.sql en Supabase.":(ex.message||"No se pudo guardar «Quién te atiende»."));}}
     saveState(); toast("Configuración guardada.");
   });
 
@@ -2071,14 +2084,17 @@ async function galDelete(h){
 }
 function openGallery(idx){
   const o=builderOptions[idx]; if(!o) return;
-  const room=MAX_PHOTOS-photosOf(o).length;
-  if(room<=0) return toast(`Esta opción ya tiene ${MAX_PHOTOS} fotos. Quitá una para agregar otra.`);
-  const used=new Set(photosOf(o).map(photoHash)), sel=[], opener=document.activeElement;
+  openGalleryCore({room:MAX_PHOTOS-photosOf(o).length,current:photosOf(o),full:`Esta opción ya tiene ${MAX_PHOTOS} fotos. Quitá una para agregar otra.`,
+    onAdd:add=>{o.photos=[...photosOf(o),...add].slice(0,MAX_PHOTOS); o.photo=o.photos[0]||""; o._open=true; renderOptionEditors(); renderBuilderPreview();}});
+}
+function openGalleryCore({room,current,full,onAdd}){
+  if(room<=0) return toast(full);
+  const used=new Set(current.map(photoHash)), sel=[], opener=document.activeElement;
   const wrap=document.createElement("div");
   wrap.className="gal-modal"; wrap.setAttribute("role","dialog"); wrap.setAttribute("aria-modal","true"); wrap.setAttribute("aria-label","Mi galería de fotos");
   wrap.innerHTML=`<div class="gal-sheet">
     <header><h3>Mi galería</h3><button type="button" class="gal-close" data-gal-close aria-label="Cerrar">×</button></header>
-    <p class="gal-hint">Tocá las fotos que quieras usar en esta opción (hasta ${room}).</p>
+    <p class="gal-hint">Tocá las fotos que quieras usar (hasta ${room}).</p>
     <div class="gal-grid"><p class="gal-empty">Cargando tus fotos…</p></div>
     <footer><button type="button" class="btn btn-secondary" data-gal-close>Cancelar</button><button type="button" class="btn btn-primary" data-gal-ok disabled>Agregar</button></footer></div>`;
   document.body.appendChild(wrap); document.body.classList.add("gal-open");
@@ -2091,7 +2107,7 @@ function openGallery(idx){
     ok.disabled=!sel.length; ok.textContent=sel.length?`Agregar ${sel.length} ${sel.length===1?"foto":"fotos"}`:"Agregar";
     if(!list.length){grid.innerHTML='<p class="gal-empty">Todavía no hay fotos guardadas. Las que subas a una opción se guardan acá solas para que las reutilices.</p>'; return;}
     grid.innerHTML=list.map((x,i)=>{const u=used.has(x.h), s=sel.includes(x.h);
-      return `<div class="gal-item${u?" is-used":""}${s?" is-sel":""}"><button type="button" class="gal-pick" data-h="${x.h}" aria-pressed="${s}" aria-label="Foto ${i+1}${u?" (ya está en esta opción)":""}"><img src="${x.src}" alt="" loading="lazy"></button><span class="gal-check" aria-hidden="true">✓</span>${u?'<span class="gal-tag">Ya está</span>':""}<button type="button" class="gal-del" data-del="${x.h}" aria-label="Borrar de mi galería">×</button></div>`;}).join("");
+      return `<div class="gal-item${u?" is-used":""}${s?" is-sel":""}"><button type="button" class="gal-pick" data-h="${x.h}" aria-pressed="${s}" aria-label="Foto ${i+1}${u?" (ya está agregada)":""}"><img src="${x.src}" alt="" loading="lazy"></button><span class="gal-check" aria-hidden="true">✓</span>${u?'<span class="gal-tag">Ya está</span>':""}<button type="button" class="gal-del" data-del="${x.h}" aria-label="Borrar de mi galería">×</button></div>`;}).join("");
   };
   wrap.addEventListener("click",async e=>{
     if(e.target===wrap||e.target.closest("[data-gal-close]")) return close();
@@ -2102,15 +2118,14 @@ function openGallery(idx){
     }
     const pick=e.target.closest("[data-h]");
     if(pick){
-      const h=pick.dataset.h; if(used.has(h)) return toast("Esa foto ya está en esta opción.");
+      const h=pick.dataset.h; if(used.has(h)) return toast("Esa foto ya está agregada.");
       const k=sel.indexOf(h);
-      if(k>=0) sel.splice(k,1); else if(sel.length>=room) return toast(`Solo podés agregar ${room} ${room===1?"foto más":"fotos más"} a esta opción.`); else sel.push(h);
+      if(k>=0) sel.splice(k,1); else if(sel.length>=room) return toast(`Solo podés agregar ${room} ${room===1?"foto más":"fotos más"}.`); else sel.push(h);
       return paint();
     }
     if(e.target.closest("[data-gal-ok]")){
       const add=sel.map(h=>(list.find(x=>x.h===h)||{}).src).filter(Boolean);
-      o.photos=[...photosOf(o),...add].slice(0,MAX_PHOTOS); o.photo=o.photos[0]||""; o._open=true;
-      close(); renderOptionEditors(); renderBuilderPreview(); toast(add.length===1?"Foto agregada.":`${add.length} fotos agregadas.`);
+      close(); onAdd(add); toast(add.length===1?"Foto agregada.":`${add.length} fotos agregadas.`);
     }
   });
   galGet().then(l=>{list=l.slice(); paint(); const f=grid.querySelector(".gal-pick:not(:disabled)")||wrap.querySelector("[data-gal-close]"); if(f&&f.focus) f.focus();}).catch(()=>{list=[]; paint();});
@@ -2119,3 +2134,166 @@ document.addEventListener("click",e=>{
   const b=e.target.closest&&e.target.closest("[data-gal-open]"); if(!b) return;
   const row=b.closest("[data-idx]"); if(row) openGallery(+row.dataset.idx);
 });
+
+/* ===== v34: mejorar oferta, «Quién te atiende» y fotos en Supabase Storage ===== */
+const isMissingFn=e=>!!e&&(e.code==="PGRST202"||/could not find the function/i.test(e.message||""));
+
+/* ---- Fotos en Storage (bucket público "fotos"): en la base queda solo el link, no la imagen ---- */
+const _phData=new Map(); let _stFail=false;
+function dataToBlob(d){const [h,b]=d.split(","),m=/data:([^;]+)/.exec(h)[1],bin=atob(b),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:m});}
+async function storePhoto(dataUrl){
+  if(!(Cloud.on&&currentUser&&CFG.photoStorage!==false&&!_stFail)||!/^data:image\/jpeg;base64,/.test(dataUrl)) return dataUrl;
+  try{
+    const sb=await Auth.client(), path=`${currentUser.id}/${photoHash(dataUrl)}.jpg`;
+    const {error}=await sb.storage.from("fotos").upload(path,dataToBlob(dataUrl),{contentType:"image/jpeg",upsert:true,cacheControl:"31536000"});
+    if(error) throw error;
+    const url=sb.storage.from("fotos").getPublicUrl(path).data.publicUrl;
+    if(!safeImg(url)) throw new Error("URL de foto no válida");
+    _phData.set(url,dataUrl); return url;
+  }catch(e){
+    if(!_stFail){_stFail=true; toast("Las fotos se guardan sin Storage: falta ejecutar supabase_storage_fotos.sql. La propuesta funciona igual.");}
+    return dataUrl;
+  }
+}
+// Si el SQL de fotos que ya tenías no acepta links, se reintenta con la imagen original (solo si sigue en memoria).
+async function rpcPhotos(name,mk){
+  try{return await Cloud.rpc(name,mk(x=>x));}
+  catch(e){
+    const a=mk(x=>_phData.get(x)||x);
+    if(JSON.stringify(a)===JSON.stringify(mk(x=>x))) throw e;
+    return await Cloud.rpc(name,a);
+  }
+}
+
+/* ---- «Quién te atiende» ---- */
+function profileOf(x){
+  x=x&&typeof x==="object"?x:{}; const s=(v,n)=>String(v||"").trim().replace(/\s+/g," ").slice(0,n);
+  return {trade:s(x.trade,60),area:s(x.area,60),years:Math.min(80,Math.max(0,parseInt(x.years,10)||0)),response:s(x.response,40),bio:String(x.bio||"").trim().slice(0,280),
+    portfolio:(Array.isArray(x.portfolio)?x.portfolio:[]).map(safeImg).filter(Boolean).slice(0,8)};
+}
+const profileEmpty=f=>!(f.trade||f.area||f.years||f.response||f.bio||f.portfolio.length);
+const yearsText=n=>n===1?"1 año de experiencia":`${n} años de experiencia`;
+function whoChip(){
+  const f=profileOf(state.business&&state.business.profile), bits=[f.trade,f.area,f.years?yearsText(f.years):""].filter(Boolean);
+  return bits.length?`<div class="who-chip">${bits.map(escapeHtml).join(" · ")}</div>`:"";
+}
+function whoMarkup(){
+  const f=profileOf(state.business&&state.business.profile); if(profileEmpty(f)) return "";
+  const e=escapeHtml, b=state.business;
+  const facts=[f.trade?`🧰 ${e(f.trade)}`:"",f.area?`📍 ${e(f.area)}`:"",f.years?`⭐ ${e(yearsText(f.years))}`:"",f.response?`💬 Responde ${e(f.response.toLowerCase())}`:""].filter(Boolean);
+  return `<section class="who" data-sec="quien"><h4>Quién te atiende</h4>
+    <div class="who-top">${avatarHtml()}<div><b>${e(b.name||"")}</b>${facts.length?`<ul class="who-facts">${facts.map(x=>`<li>${x}</li>`).join("")}</ul>`:""}</div></div>
+    ${f.bio?`<p class="who-bio">${e(f.bio)}</p>`:""}
+    ${f.portfolio.length?`<div class="who-work"><h5>Trabajos realizados</h5><div class="who-row" tabindex="0" role="group" aria-label="Trabajos realizados">${f.portfolio.map((s,i)=>`<img src="${s}" alt="Trabajo realizado ${i+1} de ${f.portfolio.length}" loading="lazy" decoding="async">`).join("")}</div></div>`:""}
+  </section>`;
+}
+function fillProfile(){
+  const f=$("#settingsForm"); if(!f||!f.elements.profTrade) return;
+  const p=profileOf(state.business&&state.business.profile); state.business.profile=p;
+  f.elements.profTrade.value=p.trade; f.elements.profArea.value=p.area; f.elements.profYears.value=p.years||"";
+  f.elements.profResponse.value=p.response; f.elements.profBio.value=p.bio; renderPortfolio();
+}
+function readProfile(){
+  const f=$("#settingsForm").elements, cur=profileOf(state.business.profile);
+  return profileOf({trade:f.profTrade.value,area:f.profArea.value,years:f.profYears.value,response:f.profResponse.value,bio:f.profBio.value,portfolio:cur.portfolio});
+}
+function renderPortfolio(){
+  const box=$("#portfolioGrid"); if(!box) return; const l=profileOf(state.business.profile).portfolio;
+  box.innerHTML=l.map((s,i)=>`<figure><img src="${s}" alt="Trabajo ${i+1}"><button type="button" class="photo-x" data-pf-del="${i}" aria-label="Quitar trabajo ${i+1}">×</button></figure>`).join("");
+  const c=$("#portfolioCount"); if(c) c.textContent=`${l.length}/8`;
+  const inp=$("#portfolioInput"), gb=$("#portfolioGalBtn"); if(inp) inp.disabled=l.length>=8; if(gb) gb.disabled=l.length>=8;
+}
+document.addEventListener("change",async e=>{
+  const t=e.target; if(!t||t.id!=="portfolioInput"||!t.files||!t.files.length) return;
+  const prof=profileOf(state.business.profile), files=[...t.files].filter(f=>f.type.startsWith("image/")).slice(0,8-prof.portfolio.length);
+  t.value=""; if(!files.length) return;
+  if(Cloud.on) toast("Subiendo fotos…");
+  try{
+    const add=[]; for(const f of files) add.push(await storePhoto(await resizePhoto(f)));
+    state.business.profile={...prof,portfolio:[...prof.portfolio,...add].slice(0,8)}; galAdd(add).catch(()=>{}); renderPortfolio();
+    toast("Fotos listas. Tocá «Guardar configuración» para publicarlas.");
+  }catch(err){toast(err.message||"No se pudo leer la imagen.");}
+});
+document.addEventListener("click",e=>{
+  const T=e.target&&e.target.closest?e.target:null; if(!T) return;
+  const del=T.closest("[data-pf-del]");
+  if(del){const prof=profileOf(state.business.profile); prof.portfolio.splice(+del.dataset.pfDel,1); state.business.profile=prof; renderPortfolio(); return;}
+  if(T.closest("#portfolioGalBtn")){
+    const prof=profileOf(state.business.profile);
+    openGalleryCore({room:8-prof.portfolio.length,current:prof.portfolio,full:"Ya cargaste 8 trabajos. Quitá uno para agregar otro.",
+      onAdd:add=>{const c=profileOf(state.business.profile); state.business.profile={...c,portfolio:[...c.portfolio,...add].slice(0,8)}; renderPortfolio();}});
+    return;
+  }
+  const imp=T.closest("[data-improve]"); if(imp) openImprove(imp.dataset.improve);
+});
+
+/* ---- Mejorar oferta: cambia la propuesta enviada sin crear otro link ---- */
+function applyOfferUpdate(p){
+  const u=p&&p.offerUpdate; if(!u||typeof u!=="object") return p;
+  if(u.bonusText){p.bonusText=u.bonusText; if(u.bonusUntil){const t=new Date(u.bonusUntil).getTime(); if(t) p.bonusDeadlineMs=t;}}
+  return p;
+}
+function offerBannerMarkup(p){
+  const u=p&&p.offerUpdate; if(!u||!Array.isArray(u.summary)||!u.summary.length||["accepted","lost","expired"].includes(p.status)) return "";
+  const at=new Date(u.at).getTime(); if(!at||Date.now()-at>14*864e5) return "";
+  const e=escapeHtml, h=Math.floor((Date.now()-at)/36e5), when=h<1?"hace un momento":h<24?`hace ${h} h`:`hace ${Math.floor(h/24)} d`;
+  return `<div class="offer-update" role="status"><div class="ou-head"><b>🔄 Actualizamos tu propuesta</b><small>${when}</small></div><ul>${u.summary.map(s=>`<li>${e(s)}</li>`).join("")}</ul>${u.note?`<p class="ou-note">💬 ${e(u.note)}</p>`:""}</div>`;
+}
+async function openImprove(id){
+  const p=state.proposals.find(x=>x.id===id); if(!p) return;
+  if(!["sent","viewed","expired"].includes(p.status)) return toast("Esa propuesta ya está cerrada.");
+  const e=escapeHtml, o=chosenOf(p), dep=Number(p.depositPct)||0, expired=p.status==="expired", canDep=dep>1;
+  const base=daysLeft(p)>=0?p.expiresAt:isoDate(Date.now()), who=fullName(p.client.name)||"este cliente";
+  openTool(`<form id="improveForm" class="improve" novalidate>
+    <h3>✨ Mejorar oferta</h3>
+    <p class="imp-lead">Para ${e(who)}. Se actualiza <b>el mismo link</b>: no perdés el seguimiento y el cliente ve “Actualizamos tu propuesta”.</p>
+    <div class="imp-row"><input type="checkbox" id="impExt" aria-label="Extender la vigencia" ${expired?"checked":""}><div class="imp-txt"><b>Extender la vigencia</b><small>${expired?"Venció":"Vence"} el ${e(fmtDate(p.expiresAt))}</small></div><div class="imp-ctl"><select id="impExtDays" aria-label="Días a extender"><option value="2">+ 2 días (48 h)</option><option value="3">+ 3 días</option><option value="7">+ 7 días</option></select></div></div>
+    <div class="imp-row"><input type="checkbox" id="impDep" aria-label="Bajar la seña" ${canDep?"":"disabled"}><div class="imp-txt"><b>Bajar la seña</b><small>${dep>0?`Hoy pedís el ${dep}% (${money(depositOf(p,o))})`:"No pedís seña"}</small></div><div class="imp-ctl"><input type="number" id="impDepVal" min="1" max="${Math.max(1,Math.ceil(dep)-1)}" value="${Math.max(1,Math.floor(dep/2))}" inputmode="numeric" aria-label="Nueva seña en porcentaje" ${canDep?"":"disabled"}> %</div></div>
+    <div class="imp-row"><input type="checkbox" id="impInst" aria-label="Sumar cuotas"><div class="imp-txt"><b>Sumar cuotas</b><small>Se aplica a todas las opciones</small></div><div class="imp-ctl"><select id="impInstVal" aria-label="Cantidad de cuotas"><option>3</option><option>6</option><option>12</option></select></div></div>
+    <div class="imp-row"><input type="checkbox" id="impBon" aria-label="Agregar un bonus"><div class="imp-txt"><b>Bonus por decidir a tiempo</b><small>Solo si lo vas a cumplir</small></div><div class="imp-ctl col"><input id="impBonTxt" maxlength="140" placeholder="Ej: Instalación gratis" aria-label="Qué incluye el bonus"><select id="impBonHrs" aria-label="Duración del bonus"><option value="24">Vale 24 h</option><option value="48" selected>Vale 48 h</option><option value="72">Vale 72 h</option></select></div></div>
+    <label class="imp-note">Mensaje para el cliente (opcional)<textarea id="impNote" maxlength="300" rows="2" placeholder="Ej: Te armé esto para que te quede más cómodo."></textarea></label>
+    <p class="imp-err" id="impErr" role="alert" hidden></p>
+    <div class="form-actions"><button type="submit" class="btn btn-primary" id="impGo">Aplicar mejoras</button></div>
+  </form>`);
+  const form=$("#improveForm"), err=$("#impErr");
+  const fail=m=>{err.textContent=m; err.hidden=false; return false;};
+  const mark=ev=>{const row=ev.target.closest(".imp-row"); if(!row) return; const cb=row.querySelector('input[type=checkbox]'); if(cb&&ev.target!==cb&&!cb.disabled) cb.checked=true;};
+  form.addEventListener("input",mark); form.addEventListener("change",mark);
+  form.addEventListener("submit",async ev=>{
+    ev.preventDefault(); err.hidden=true;
+    const ch={};
+    if($("#impExt").checked) ch.extendDays=+$("#impExtDays").value;
+    if(canDep&&$("#impDep").checked){const v=Number($("#impDepVal").value); if(!(v>=1&&v<dep)) return fail(`La nueva seña tiene que ser menor al ${dep}%.`); ch.depositPct=v;}
+    if($("#impInst").checked) ch.installments=+$("#impInstVal").value;
+    if($("#impBon").checked){const t=$("#impBonTxt").value.trim(); if(!t) return fail("Escribí cuál es el bonus."); ch.bonusText=t.slice(0,140); ch.bonusHours=+$("#impBonHrs").value;}
+    if(!Object.keys(ch).length) return fail("Elegí al menos una mejora.");
+    if(expired&&!ch.extendDays) return fail("La propuesta venció: extendé la vigencia para reabrirla.");
+    const newExp=ch.extendDays?addDays(base,ch.extendDays):null, until=ch.bonusText?Date.now()+ch.bonusHours*36e5:0, note=$("#impNote").value.trim().slice(0,300);
+    const summary=[];
+    if(newExp) summary.push(`Vigente hasta el ${fmtDate(newExp)}`);
+    if(ch.depositPct!=null) summary.push(`Seña reducida al ${ch.depositPct}%${p.options.length===1?` (${money(Math.round(finalPrice(o)*ch.depositPct/100))})`:""}`);
+    if(ch.installments) summary.push(`Hasta ${ch.installments} cuotas`);
+    if(ch.bonusText) summary.push(`🎁 Bonus: ${ch.bonusText} (hasta ${dayWord(until)})`);
+    const btn=$("#impGo"); btn.disabled=true;
+    if(Cloud.on){
+      try{await Cloud.rpc("improve_offer",{p_id:id,p:{...ch,summary,note}}); await Cloud.hydrate();}
+      catch(ex){btn.disabled=false; return fail(isMissingFn(ex)?"Falta ejecutar supabase_v6_oferta_perfil.sql en Supabase.":(ex.message||"No se pudo aplicar la mejora."));}
+    }else try{
+      if(newExp){p.expiresAt=newExp; if(p.status==="expired") p.status=p.views>0?"viewed":"sent";}
+      if(ch.depositPct!=null) p.depositPct=ch.depositPct;
+      if(ch.installments) p.options.forEach(op=>{if(!op.hasInstallments||op.installments<ch.installments){op.hasInstallments=true; op.installments=ch.installments;}});
+      let bText=ch.bonusText||"", bUntil=until;
+      const prev=p.offerUpdate;
+      if(!bText&&prev&&prev.bonusText&&new Date(prev.bonusUntil).getTime()>Date.now()){bText=prev.bonusText; bUntil=new Date(prev.bonusUntil).getTime();}
+      if(bText){p.bonusText=bText; p.bonusHours=ch.bonusHours||p.bonusHours||48; p.bonusDeadlineMs=bUntil;}
+      p.offerUpdate={at:new Date().toISOString(),summary,note,bonusText:bText,bonusUntil:bText?new Date(bUntil).toISOString():null};
+      p.lastEvent="Oferta mejorada."; state.activity.unshift({icon:"✨",text:`Mejoraste la oferta de ${p.client.name}.`,time:"Ahora"});
+      saveState(); renderDashboard();
+    }catch(ex){btn.disabled=false; return fail(ex.message||"No se pudo aplicar la mejora.");}
+    const msg=`${hello(firstName(p.client.name))} 👋 Mejoré tu propuesta de "${p.title}":\n${summary.map(s=>"• "+s).join("\n")}\n${note?note+"\n":""}Mirala acá 👇\n${shareLink(p)}`;
+    $("#toolContent").innerHTML=`<div class="improve-done"><h3>✅ Oferta mejorada</h3><p>El cliente la ve actualizada en el mismo link, con el aviso “Actualizamos tu propuesta”.</p><ul>${summary.map(s=>`<li>${e(s)}</li>`).join("")}</ul>
+      <div class="form-actions"><a class="btn btn-primary" target="_blank" rel="noopener" href="https://wa.me/${normalizePhone(p.client.phone)}?text=${encodeURIComponent(msg)}">💬 Avisarle por WhatsApp</a><button type="button" class="btn btn-secondary" id="impDone">Cerrar</button></div></div>`;
+    $("#impDone").addEventListener("click",()=>closeModal("toolModal"));
+    toast("Oferta mejorada.");
+  });
+}
