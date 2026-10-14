@@ -266,6 +266,14 @@
               <label>Política de seña (opcional, la ve el cliente)<textarea name="depositPolicy" rows="3" maxlength="600" placeholder="Ej: La seña se descuenta del total. Si cancelás con 48 h de aviso, te la devolvemos."></textarea></label>
               <label>Preguntas frecuentes (una por línea: Pregunta | Respuesta)<textarea name="faq" rows="5" maxlength="2000" placeholder="¿Cuánto tarda? | 15 días hábiles desde la seña.&#10;¿Incluye la instalación? | Sí, está incluida en todas las opciones."></textarea></label>
               <label>Qué pasa después de reservar (una por línea: Paso | Detalle | Plazo). Poné tus plazos reales<textarea name="afterSteps" rows="4" maxlength="800" placeholder="Reservás con la seña | Te confirmo por WhatsApp | Al instante&#10;Coordinamos | Acordamos fecha y detalles | En 24 h&#10;Entrega o turno | Hacemos el trabajo | Fecha acordada"></textarea></label>
+              <h3>Quién te atiende</h3>
+              <p class="field-help">Lo ve el cliente en cada propuesta, antes de decidir. Completá solo lo que sea verdad.</p>
+              <label>Rubro o especialidad<input name="profTrade" maxlength="60" placeholder="Ej: Pintura y reformas"></label>
+              <label>Zona donde trabajás<input name="profArea" maxlength="60" placeholder="Ej: Zona norte y alrededores"></label>
+              <label>Años de experiencia<input name="profYears" type="number" min="0" max="80" inputmode="numeric"></label>
+              <label>Tiempo de respuesta<select name="profResponse"><option value="">No mostrar</option><option>En minutos</option><option>En menos de 1 hora</option><option>En el día</option><option>En menos de 24 horas</option></select></label>
+              <label>Sobre vos (opcional)<textarea name="profBio" rows="3" maxlength="280" placeholder="Ej: Trabajo con materiales de primera y te paso fotos del avance cada día."></textarea></label>
+              <div class="portfolio-field"><b>Trabajos realizados <span id="portfolioCount" class="photo-count">0/8</span></b><small>Hasta 8 fotos de trabajos terminados. Se muestran en tus propuestas.</small><div class="photo-grid" id="portfolioGrid"></div><div class="portfolio-actions"><input type="file" id="portfolioInput" accept="image/*" multiple><button type="button" class="btn btn-secondary btn-sm" id="portfolioGalBtn">🖼 Elegir de mi galería</button></div></div>
               <div class="form-actions"><button class="btn btn-primary">Guardar configuración</button></div>
             </form>
           </div>
