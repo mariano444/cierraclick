@@ -2335,7 +2335,16 @@ const trustFields=t=>({
   ratingDist:t.dist&&typeof t.dist==="object"?t.dist:null,
   ...(t.profile&&typeof t.profile==="object"?{profile:profileOf(t.profile)}:{})
 });
-const reviewSafeMarkup=()=>`<div class="rv-safe" role="note"><span aria-hidden="true">🔒</span><div><b>Es seguro opinar acá</b><small>Este link es personal y sirve para una sola opinión. No te pedimos pagos, claves ni datos bancarios. Tu opinión se muestra con tu nombre.</small></div></div>`;
+const reviewSafeMarkup=()=>`<section class="rv-safe" role="note" aria-labelledby="rvSafeT">
+  <h4 id="rvSafeT">🔒 ¿Es seguro opinar acá?</h4>
+  <p class="rv-safe-lead"><b>¡Sí!</b> Tu opinión es personal y está vinculada a un enlace único, habilitado exclusivamente para un cliente registrado.</p>
+  <ul class="rv-safe-list">
+    <li><span aria-hidden="true">✅</span><div><b>Acceso individual:</b> el enlace está destinado a una sola opinión por cliente.</div></li>
+    <li><span aria-hidden="true">🔐</span><div><b>Privacidad y transparencia:</b> tu opinión se publica con tu nombre, para que otros puedan conocer tu experiencia real.</div></li>
+    <li><span aria-hidden="true">🤝</span><div><b>Tu confianza es importante:</b> buscamos que cada opinión sea auténtica y que ayude a otras personas a tomar decisiones con mayor seguridad.</div></li>
+  </ul>
+  <p class="rv-safe-thanks">Tu experiencia cuenta. ¡Gracias por compartirla!</p>
+</section>`;
 function openLightbox(src,alt){
   if(!safeImg(src)) return;
   const wrap=document.createElement("div"), prev=document.activeElement;
