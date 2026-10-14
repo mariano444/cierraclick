@@ -870,3 +870,7 @@ body.gal-open{overflow:hidden}
 .portfolio-field small{color:var(--muted)}
 .portfolio-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .portfolio-actions input[type=file]{font-size:13px;max-width:100%}
+
+/* v35: foto de perfil protegida contra "guardar imagen" (clic derecho / mantener presionado) */
+.avatar.has-photo{position:relative;background-color:var(--soft,#e2e8f0);background-size:cover;background-position:center;background-repeat:no-repeat;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.avatar.has-photo::after{content:"";position:absolute;inset:0;border-radius:inherit}
