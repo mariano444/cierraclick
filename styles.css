@@ -874,3 +874,23 @@ body.gal-open{overflow:hidden}
 /* v35: foto de perfil protegida contra "guardar imagen" (clic derecho / mantener presionado) */
 .avatar.has-photo{position:relative;background-color:var(--soft,#e2e8f0);background-size:cover;background-position:center;background-repeat:no-repeat;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .avatar.has-photo::after{content:"";position:absolute;inset:0;border-radius:inherit}
+
+/* v36: enlace de opinión — confianza, seguridad, todas las reseñas y trabajos realizados */
+.rv-safe{display:flex;gap:12px;align-items:flex-start;margin:14px 0;padding:12px 14px;border-radius:14px;background:#f0fdf4;border:1px solid #bbf7d0;color:#14532d}
+.rv-safe>span{font-size:20px;line-height:1.2}
+.rv-safe b{display:block;font-size:14px}
+.rv-safe small{display:block;margin-top:2px;font-size:12.5px;line-height:1.45;color:#166534}
+.rev-dist{display:grid;gap:6px;margin:4px 0 14px;max-width:420px}
+.rd-row{display:grid;grid-template-columns:30px 1fr 28px;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--ink-2)}
+.rd-row i{display:block;height:8px;border-radius:99px;background:#e2e8f0;overflow:hidden}
+.rd-row b{display:block;height:100%;border-radius:99px;background:#f59e0b}
+.rd-row em{font-style:normal;text-align:right;color:var(--muted)}
+.rev-list{display:grid;gap:12px}
+.rev-list .review{display:flex;flex-direction:column;gap:8px;margin:0;padding:16px;border-radius:16px;background:#fff;border:1px solid var(--line);box-shadow:0 6px 18px rgba(15,23,42,.05)}
+.rev-list .review blockquote{margin:0;font-size:14.5px;line-height:1.55;color:var(--ink-2);overflow-wrap:anywhere}
+.rv-page .who{margin-top:20px}
+.who-row img{cursor:zoom-in}
+.who-row img:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.lb{position:fixed;inset:0;z-index:400;display:grid;place-items:center;padding:16px;background:rgba(15,23,42,.88);cursor:zoom-out}
+.lb img{max-width:100%;max-height:88vh;max-height:88dvh;object-fit:contain;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.lb-x{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:14px;width:44px;height:44px;border:0;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;font-size:28px;line-height:1;cursor:pointer}
