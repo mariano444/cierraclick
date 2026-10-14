@@ -657,6 +657,16 @@ function attachPublicEvents(p){
   });
   $("#doubtBtn")?.addEventListener("click",()=>{const el=$("#doubtPanel"); el.hidden=!el.hidden; if(!el.hidden) el.scrollIntoView({block:"center",behavior:"smooth"});});
   $$("[data-doubt]").forEach(a=>a.addEventListener("click",()=>{p.doubts=(p.doubts||0)+1;p.lastDoubt=a.dataset.doubt;state.activity.unshift({icon:"🙋",text:`${p.client.name} tiene una duda: ${a.dataset.doubt}.`,time:"Ahora"});saveState();}));
+  // Después de elegir, se muestra solo el último paso (nombre + condiciones) y se lleva a la persona hasta ahí.
+  const revealAccept=()=>{
+    const f=$("#acceptForm"); if(!f) return;
+    f.hidden=false; upd();
+    setTimeout(()=>{
+      const r=f.getBoundingClientRect(), visible=r.top<innerHeight*.75&&r.bottom>innerHeight*.25;
+      if(!visible) f.scrollIntoView({block:"center",behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
+      const n=$("#acceptName"); if(n&&!n.value.trim()){try{n.focus({preventScroll:true});}catch(e){}}
+    },380);
+  };
   $$("[data-select-option]",$("#publicContent")).forEach(btn=>{
     btn.addEventListener("click",()=>{
       const id=btn.dataset.selectOption;
@@ -664,7 +674,7 @@ function attachPublicEvents(p){
       p.lastEvent=`Cliente eligió ${p.options.find(x=>x.id===id)?.name||"una opción"}.`;
       state.activity.unshift({icon:"⭐",text:`${p.client.name} seleccionó una opción.`,time:"Ahora"});
       saveState(); if(Cloud.on) Cloud.rpc("track_proposal",{p_id:p.id,p_type:"select",p_option:id}).catch(()=>toast("No se pudo guardar la elección."));
-      markSelected(id); upd(); celebratePick(id);
+      markSelected(id); upd(); celebratePick(id); revealAccept();
       const chosen=p.options.find(x=>x.id===id);
       $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`${saludoHora()}, ${state.business.name} 👋 Quiero avanzar con ${chosen.name} por ${money(finalPrice(chosen))}.`)}`;
       toast(`Elegiste ${chosen.name}.`);
@@ -1073,7 +1083,7 @@ function resizeSquare(file,size=256,q=.82){
 }
 function avatarHtml(){
   const b=state.business||{};
-  return safeImg(b.photo)?`<span class="avatar has-photo"><img src="${safeImg(b.photo)}" alt=""></span>`:`<span class="avatar">${escapeHtml((b.name||"?").trim().charAt(0).toUpperCase())}</span>`;
+  return safeImg(b.photo)?`<span class="avatar has-photo" role="img" aria-label="Foto de ${escapeHtml(b.name||"quien te atiende")}" style="background-image:url('${safeImg(b.photo)}')"></span>`:`<span class="avatar">${escapeHtml((b.name||"?").trim().charAt(0).toUpperCase())}</span>`;
 }
 function updateAvatarPreview(){
   const el=$("#avatarPreview"); if(!el) return; const b=state.business||{};
@@ -2297,3 +2307,8 @@ async function openImprove(id){
     toast("Oferta mejorada.");
   });
 }
+
+/* ===== v35: la foto de perfil no se ofrece para guardar ===== */
+/* Es una disuasión, no un candado: lo que el navegador muestra siempre se puede capturar (captura de pantalla, herramientas de desarrollo). */
+document.addEventListener("contextmenu",e=>{if(e.target.closest&&e.target.closest(".avatar.has-photo")) e.preventDefault();});
+document.addEventListener("dragstart",e=>{if(e.target.closest&&e.target.closest(".avatar.has-photo")) e.preventDefault();});
