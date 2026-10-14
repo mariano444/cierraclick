@@ -191,14 +191,15 @@ const Cloud={
   },
   async publicProposal(id){
     // Las 4 consultas salen a la vez (antes: 1 y después 3), y las extras son opcionales.
-    const [r,x,ox,v3,ph,pf,ou]=await Promise.all([
+    const [r,x,ox,v3,ph,pf,ou,tr]=await Promise.all([
       this.pub("get_public_proposal",{p_id:id}),
       this.pub("get_public_extras",{p_id:id}).catch(()=>null),
       this.pub("get_public_option_extras",{p_id:id}).then(v=>({v}),()=>null),
       this.pub("get_public_v3",{p_id:id}).catch(()=>null),
       this.pub("get_public_option_photos",{p_id:id}).catch(()=>null),
       this.pub("get_public_business_profile",{p_id:id}).catch(()=>null),
-      this.pub("get_public_offer_update",{p_id:id}).catch(()=>null)]);
+      this.pub("get_public_offer_update",{p_id:id}).catch(()=>null),
+      this.pub("get_public_reviews_by_proposal",{p_id:id}).catch(()=>null)]);
     if(!r) return r;
     if(x) r.business={...(r.business||{}),...x};
     if(ox){const m=ox.v; if(m&&r.options) r.options.forEach(o=>{const e=m[o.id]; if(e){o.why=e.why;o.photo=e.photo;}}); r._ex=true;}
@@ -206,6 +207,7 @@ const Cloud={
     if(v3){applyV3(r,v3); r.business={...(r.business||{}),afterSteps:v3.afterSteps||""};}
     if(pf&&typeof pf==="object") r.business={...(r.business||{}),profile:profileOf(pf)};
     if(ou&&typeof ou==="object"){r.offerUpdate=ou; applyOfferUpdate(r);}
+    if(tr&&typeof tr==="object") r.business={...(r.business||{}),...trustFields(tr)};
     return r;
   }
 };
@@ -1099,20 +1101,29 @@ document.addEventListener("click",e=>{
 });
 function getReviews(){
   const b=state.business||{};
-  if(Array.isArray(b.reviews)&&b.rating) return {avg:Number(b.rating.avg)||0,count:Number(b.rating.count)||0,
+  if(Array.isArray(b.reviews)&&b.rating) return {avg:Number(b.rating.avg)||0,count:Number(b.rating.count)||0,dist:b.ratingDist||null,
     list:b.reviews.map(r=>({stars:r.stars,comment:r.comment,photo:r.photo||"",author:r.author,source:r.source,at:r.created_at?new Date(r.created_at).getTime():(r.at||0)}))};
   const rs=[...(state.proposals||[]).filter(p=>p.review&&p.review.stars).map(p=>({stars:p.review.stars,comment:p.review.comment||"",photo:p.review.photo||"",author:fullName(p.client.name),source:"proposal",at:p.review.at||0})),...(state.extReviews||[]).map(r=>({...r,source:"external"}))];
-  const c=rs.length;
-  return {avg:c?rs.reduce((x,r)=>x+r.stars,0)/c:0,count:c,list:rs.filter(r=>r.comment).sort((x,y)=>y.at-x.at).slice(0,8)};
+  const c=rs.length, dist={}; [1,2,3,4,5].forEach(n=>{dist[n]=rs.filter(r=>r.stars===n).length;});
+  return {avg:c?rs.reduce((x,r)=>x+r.stars,0)/c:0,count:c,dist,list:rs.filter(r=>r.comment).sort((x,y)=>y.at-x.at).slice(0,60)};
 }
 function ratingChip(){const r=getReviews(); return r.count?`<span class="rating-chip">★ ${fmtAvg(r.avg)} · ${r.count} ${r.count>1?"opiniones":"opinión"}</span>`:"";}
 const reviewCard=r=>{const nm=String(r.author||"Cliente").trim().replace(/\s+/g," ")||"Cliente";
-  return `<figure class="review"><div class="review-top"><span class="review-av${safeImg(r.photo)?" has-photo":""}" aria-hidden="true">${safeImg(r.photo)?`<img src="${safeImg(r.photo)}" alt="" loading="lazy">`:escapeHtml(nm.charAt(0).toUpperCase())}</span><div><div class="review-stars" role="img" aria-label="${Number(r.stars)||0} de 5 estrellas">${stars(r.stars)}</div><figcaption>${escapeHtml(nm)}<small>${r.source==="external"?"Cliente del negocio":"Cliente verificado"}</small></figcaption></div></div>${r.comment?`<blockquote>${escapeHtml(r.comment)}</blockquote>`:""}</figure>`;};
+  return `<figure class="review"><div class="review-top"><span class="review-av${safeImg(r.photo)?" has-photo":""}" aria-hidden="true">${safeImg(r.photo)?`<img src="${safeImg(r.photo)}" alt="" loading="lazy">`:escapeHtml(nm.charAt(0).toUpperCase())}</span><div><div class="review-stars" role="img" aria-label="${Number(r.stars)||0} de 5 estrellas">${stars(r.stars)}</div><figcaption>${escapeHtml(nm)}<small>${r.source==="external"?"Cliente del negocio":"✔ Cliente verificado"}</small></figcaption></div></div>${r.comment?`<blockquote>${escapeHtml(r.comment)}</blockquote>`:""}</figure>`;};
 const revRow=list=>`<div class="rev-row" tabindex="0" role="group" aria-label="Opiniones de clientes">${list.map(reviewCard).join("")}</div>`;
-function reviewsMarkup(){
-  const r=getReviews(); if(!r.count) return "";
-  const list=r.list.filter(x=>x.comment).slice(0,8);
-  return `<section class="reviews-box" data-sec="opiniones"><div class="rev-head"><div class="rev-sum"><strong>${fmtAvg(r.avg)}</strong><span class="review-stars">${stars(Math.round(r.avg))}</span><small>${r.count} opinión${r.count>1?"es":""} de clientes</small></div>${list.length>1?'<div class="rev-nav"><button type="button" data-rev-nav="-1" aria-label="Opiniones anteriores">‹</button><button type="button" data-rev-nav="1" aria-label="Opiniones siguientes">›</button></div>':""}</div>${list.length?revRow(list):""}</section>`;
+function reviewDistMarkup(r){
+  const d=r.dist; if(!d||!r.count) return "";
+  const get=n=>Number(d[n]!==undefined?d[n]:d[String(n)])||0, total=[1,2,3,4,5].reduce((s,n)=>s+get(n),0);
+  if(!total) return "";
+  const rows=[5,4,3,2,1].map(n=>`<div class="rd-row"><span>${n}★</span><i aria-hidden="true"><b style="width:${Math.round(100*get(n)/total)}%"></b></i><em>${get(n)}</em></div>`).join("");
+  return `<div class="rev-dist" role="img" aria-label="Opiniones por cantidad de estrellas">${rows}</div>`;
+}
+function reviewsMarkup(opts){
+  const asList=!!(opts&&opts.list), r=getReviews(); if(!r.count) return "";
+  const list=r.list.filter(x=>x.comment);
+  const nav=!asList&&list.length>1?'<div class="rev-nav"><button type="button" data-rev-nav="-1" aria-label="Opiniones anteriores">‹</button><button type="button" data-rev-nav="1" aria-label="Opiniones siguientes">›</button></div>':"";
+  const body=!list.length?"":asList?`<div class="rev-list">${list.map(reviewCard).join("")}</div>`:revRow(list);
+  return `<section class="reviews-box${asList?" as-list":""}" data-sec="opiniones"><div class="rev-head"><div class="rev-sum"><strong>${fmtAvg(r.avg)}</strong><span class="review-stars">${stars(Math.round(r.avg))}</span><small>${r.count} opinión${r.count>1?"es":""} de clientes</small></div>${nav}</div>${reviewDistMarkup(r)}${body}</section>`;
 }
 function reviewsPanel(){
   const r=getReviews();
@@ -1127,7 +1138,7 @@ async function loadReviews(){
     let {data,error}=await q("stars,comment,author,source,status,created_at,photo"); if(error) ({data,error}=await q("stars,comment,author,source,status,created_at"));
     if(error) throw error;
     const rows=data||[], pub=rows.filter(r=>r.status==="published"), c=pub.length;
-    REV_CACHE={rating:{avg:c?pub.reduce((x,r)=>x+r.stars,0)/c:0,count:c},reviews:pub.filter(r=>r.comment).slice(0,8),pendingReviews:rows.length-c};
+    REV_CACHE={rating:{avg:c?pub.reduce((x,r)=>x+r.stars,0)/c:0,count:c},reviews:pub.filter(r=>r.comment).slice(0,60),pendingReviews:rows.length-c};
     applyRevCache();
     if($("#perfExtras")) renderPerfExtras(); // repinta el panel con los datos ya cargados
   }catch(e){console.warn("loadReviews:",e);}
@@ -1219,7 +1230,11 @@ function initReviewAsk(){
 async function openReviewLink(token){
   let info=null;
   try{
-    if(Cloud.on){info=await Cloud.rpc("get_review_request",{p_token:token}); if(info&&info.business) state.business={...state.business,...info.business};}
+    if(Cloud.on){
+      info=await Cloud.rpc("get_review_request",{p_token:token}); if(info&&info.business) state.business={...state.business,...info.business};
+      // Reseñas completas + «Quién te atiende» (si falta supabase_v7_resenas_publicas.sql, se ven las que mande la función anterior)
+      try{const t=await Cloud.rpc("get_public_reviews_by_token",{p_token:token}); if(t&&typeof t==="object") state.business={...state.business,...trustFields(t)};}catch(e){}
+    }
     else{const r=(state.reviewRequests||{})[token]; info=r?{status:r.used?"used":"valid",client:r.name.split(" ")[0]}:null;}
   }catch(e){}
   const card=$("#publicContent");
@@ -1228,7 +1243,7 @@ async function openReviewLink(token){
     card.innerHTML=`<div class="public-card"><div class="public-greeting">${used?"Ya recibimos tu opinión 🙌":"Este link no está disponible"}</div><p style="color:#64748b">${used?"¡Gracias por tomarte el tiempo!":"Pedile a quien te lo envió que te mande uno nuevo."}</p></div>`;
   }else{
     const rp={review:null,_token:token};
-    card.innerHTML=`<div class="public-card"><div class="public-brand">${avatarHtml()}${escapeHtml((state.business.name||"").toUpperCase())}${ratingChip()}</div><div class="public-greeting">${escapeHtml(hello(info.client))} 👋</div><p style="color:#475569">Contanos cómo fue tu experiencia con ${escapeHtml(state.business.name||"el negocio")}.</p>${reviewFormMarkup(rp)}${reviewsMarkup()}</div>`;
+    card.innerHTML=`<div class="public-card rv-page"><div class="public-brand">${avatarHtml()}${escapeHtml((state.business.name||"").toUpperCase())}${ratingChip()}</div>${whoChip()}<div class="public-greeting">${escapeHtml(hello(info.client))} 👋</div><p style="color:#475569">Contanos cómo fue tu experiencia con ${escapeHtml(state.business.name||"el negocio")}.</p>${reviewSafeMarkup()}${reviewFormMarkup(rp)}${whoMarkup()}${reviewsMarkup({list:true})}</div>`;
     attachReview(rp);
   }
   openModal("publicModal"); document.documentElement.classList.add("proposal-ready");
@@ -2194,7 +2209,7 @@ function whoMarkup(){
   return `<section class="who" data-sec="quien"><h4>Quién te atiende</h4>
     <div class="who-top">${avatarHtml()}<div><b>${e(b.name||"")}</b>${facts.length?`<ul class="who-facts">${facts.map(x=>`<li>${x}</li>`).join("")}</ul>`:""}</div></div>
     ${f.bio?`<p class="who-bio">${e(f.bio)}</p>`:""}
-    ${f.portfolio.length?`<div class="who-work"><h5>Trabajos realizados</h5><div class="who-row" tabindex="0" role="group" aria-label="Trabajos realizados">${f.portfolio.map((s,i)=>`<img src="${s}" alt="Trabajo realizado ${i+1} de ${f.portfolio.length}" loading="lazy" decoding="async">`).join("")}</div></div>`:""}
+    ${f.portfolio.length?`<div class="who-work"><h5>Trabajos realizados</h5><div class="who-row" tabindex="0" role="group" aria-label="Trabajos realizados">${f.portfolio.map((s,i)=>`<img src="${s}" alt="Trabajo realizado ${i+1} de ${f.portfolio.length}" loading="lazy" decoding="async" tabindex="0" role="button">`).join("")}</div></div>`:""}
   </section>`;
 }
 function fillProfile(){
@@ -2312,3 +2327,24 @@ async function openImprove(id){
 /* Es una disuasión, no un candado: lo que el navegador muestra siempre se puede capturar (captura de pantalla, herramientas de desarrollo). */
 document.addEventListener("contextmenu",e=>{if(e.target.closest&&e.target.closest(".avatar.has-photo")) e.preventDefault();});
 document.addEventListener("dragstart",e=>{if(e.target.closest&&e.target.closest(".avatar.has-photo")) e.preventDefault();});
+
+/* ===== v36: reseñas completas, trabajos realizados y sello de seguridad en el enlace de opinión ===== */
+const trustFields=t=>({
+  reviews:Array.isArray(t.reviews)?t.reviews:[],
+  rating:t.rating&&typeof t.rating==="object"?t.rating:{avg:0,count:0},
+  ratingDist:t.dist&&typeof t.dist==="object"?t.dist:null,
+  ...(t.profile&&typeof t.profile==="object"?{profile:profileOf(t.profile)}:{})
+});
+const reviewSafeMarkup=()=>`<div class="rv-safe" role="note"><span aria-hidden="true">🔒</span><div><b>Es seguro opinar acá</b><small>Este link es personal y sirve para una sola opinión. No te pedimos pagos, claves ni datos bancarios. Tu opinión se muestra con tu nombre.</small></div></div>`;
+function openLightbox(src,alt){
+  if(!safeImg(src)) return;
+  const wrap=document.createElement("div"), prev=document.activeElement;
+  wrap.className="lb"; wrap.setAttribute("role","dialog"); wrap.setAttribute("aria-modal","true"); wrap.setAttribute("aria-label",alt||"Trabajo realizado");
+  wrap.innerHTML=`<button type="button" class="lb-x" aria-label="Cerrar">×</button><img src="${src}" alt="${escapeHtml(alt||"")}">`;
+  document.body.appendChild(wrap);
+  const onKey=ev=>{if(ev.key==="Escape"){ev.stopPropagation(); close();}};
+  const close=()=>{document.removeEventListener("keydown",onKey,true); wrap.remove(); if(prev&&prev.focus&&document.contains(prev)) try{prev.focus();}catch(e){}};
+  document.addEventListener("keydown",onKey,true); wrap.addEventListener("click",close); wrap.querySelector(".lb-x").focus();
+}
+document.addEventListener("click",e=>{const im=e.target.closest&&e.target.closest(".who-row img"); if(im) openLightbox(im.getAttribute("src"),im.getAttribute("alt"));});
+document.addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ") return; const im=e.target.closest&&e.target.closest(".who-row img"); if(im){e.preventDefault(); openLightbox(im.getAttribute("src"),im.getAttribute("alt"));}});
