@@ -822,3 +822,51 @@ body.gal-open{overflow:hidden}
 .gal-tag{position:absolute;left:6px;bottom:6px;padding:2px 8px;border-radius:99px;background:rgba(15,23,42,.78);color:#fff;font-size:11px;font-weight:700}
 .gal-sheet footer{display:flex;gap:10px;justify-content:flex-end;padding:12px 18px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
 .gal-sheet footer .btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* v34: «Quién te atiende», oferta actualizada, mejorar oferta y orden de la propuesta */
+.who-chip{margin:6px 0 0;font-size:12.5px;font-weight:600;color:var(--muted)}
+.flow-h{margin:24px 0 8px;font-size:15px;letter-spacing:-.01em;color:var(--ink)}
+.who{margin-top:22px;padding:16px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.who h4{margin:0 0 12px;font-size:15px}
+.who-top{display:flex;gap:12px;align-items:center}
+.who-top b{display:block;font-size:15px}
+.who-facts{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:3px;font-size:13px;color:var(--ink-2)}
+.who-bio{margin:12px 0 0;font-size:14px;line-height:1.5;color:var(--ink-2)}
+.who-work h5{margin:16px 0 8px;font-size:13px;color:var(--muted)}
+.who-row{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:6px;-webkit-overflow-scrolling:touch}
+.who-row img{flex:0 0 auto;width:150px;height:112px;object-fit:cover;border-radius:12px;border:1px solid var(--line);scroll-snap-align:start}
+.offer-update{margin:14px 0;padding:14px 16px;border-radius:14px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+.ou-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.ou-head small{font-weight:600;opacity:.75}
+.offer-update ul{margin:8px 0 0;padding-left:18px;font-size:14px;line-height:1.5}
+.ou-note{margin:8px 0 0;font-size:14px;font-style:italic}
+/* un solo botón principal: lo demás, en segundo plano */
+.public-card .public-actions .public-whatsapp,.public-card .public-actions .public-doubt{border:0!important;background:transparent!important;box-shadow:none!important;min-height:40px!important;font-size:13px!important;font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.public-card .later-box{border:0;background:none;padding:0;margin-top:14px;gap:2px 14px;justify-content:center}
+.public-card .later-box span{flex:1 1 100%;text-align:center;font-size:13px;font-weight:600;color:var(--muted)}
+.public-card .later-box button{flex:0 1 auto;min-height:40px;border:0;background:none;font-size:13px;font-weight:700;text-decoration:underline;text-underline-offset:3px;color:var(--ink-2)}
+/* mejorar oferta */
+.improve h3,.improve-done h3{margin:0 0 6px}
+.imp-lead{margin:0 0 14px;font-size:14px;color:var(--muted)}
+.imp-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.imp-row>input[type=checkbox]{flex:none;width:20px;height:20px;accent-color:var(--accent)}
+.imp-txt{flex:1;min-width:0}
+.imp-txt b{display:block;font-size:14px}
+.imp-txt small{color:var(--muted);font-size:12.5px}
+.imp-ctl{flex:none;display:flex;align-items:center;gap:6px;font-weight:700}
+.imp-ctl.col{flex-direction:column;align-items:stretch;width:150px}
+.imp-ctl input,.imp-ctl select{min-height:40px;border:1.5px solid var(--line);border-radius:10px;padding:0 8px;font:inherit;font-size:14px;background:#fff;max-width:100%}
+.imp-ctl input[type=number]{width:64px}
+.imp-note{display:grid;gap:6px;margin-top:6px;font-size:13px;font-weight:700;color:var(--ink-2)}
+.imp-note textarea{border:1.5px solid var(--line);border-radius:10px;padding:10px;font:inherit;font-size:14px}
+.imp-err{margin:10px 0 0;color:#b91c1c;font-size:13px;font-weight:700}
+.improve-done ul{padding-left:18px;line-height:1.6}
+.improve-done .form-actions{display:flex;gap:10px;flex-wrap:wrap}
+.improve-done .btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+/* trabajos realizados (Configuración) */
+.field-help{margin:-4px 0 10px;font-size:13px;color:var(--muted)}
+.portfolio-field{display:grid;gap:8px;margin:12px 0;font-size:13px;color:var(--ink-2)}
+.portfolio-field b{display:flex;gap:8px;align-items:center}
+.portfolio-field small{color:var(--muted)}
+.portfolio-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.portfolio-actions input[type=file]{font-size:13px;max-width:100%}
