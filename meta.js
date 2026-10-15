@@ -91,3 +91,15 @@ export const reviewMeta = (d, origin, id) => {
     desc: ok ? "Dejá tu opinión en 1 minuto: ayudás a otras personas a decidir." : "Este link ya no está disponible.",
     url: `${origin}/?r=${id}`, image: origin + "/og-propuesta.png", alt: "Dejá tu opinión", noindex: true });
 };
+
+// Link de recomendación (?ref=CODIGO): lo comparte un cliente con un amigo.
+export const REF_CODE = /^[a-z0-9]{8,12}$/i;
+export const referralMeta = (m, origin, code) => {
+  const biz = (m && m.business) || SITE, first = ((m && m.referrer) || "").trim();
+  const get = m && m.get ? ` 🎁 ${m.get}.` : "";
+  return metaBlock({
+    title: cut(first ? `${first} te recomendó a ${biz}` : `Te recomendaron a ${biz}`, 70),
+    desc: cut(`Mirá sus trabajos, las opiniones de sus clientes y pedí tu presupuesto sin compromiso.${get}`, 190),
+    url: `${origin}/?ref=${code}`, image: origin + "/og-referido.png",
+    alt: "Un cliente te recomendó este negocio: mirá sus trabajos y pedí tu presupuesto", noindex: true });
+};
