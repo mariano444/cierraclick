@@ -2,7 +2,7 @@
 // dinámicos cuando el link trae ?p=ID (WhatsApp no ejecuta JavaScript: lee el HTML tal cual).
 // Variables de entorno opcionales: SUPABASE_URL y SUPABASE_ANON_KEY. Si faltan se usan los valores
 // públicos de config.js (son públicos por diseño: los datos los protege RLS y la función solo expone lo mínimo).
-import { UUID, landingMeta, proposalMeta, reviewMeta, applyMeta } from "./_lib/meta.js";
+import { UUID, REF_CODE, landingMeta, proposalMeta, reviewMeta, referralMeta, applyMeta } from "./_lib/meta.js";
 
 const DEFAULT_URL = "https://rnlioprgwhcjzcbcsopq.supabase.co";
 const DEFAULT_KEY = "sb_publishable_BOM_9hz5f4oqSyURpejxnQ_uk-YBBXv";
@@ -14,8 +14,23 @@ export async function onRequestGet({ request, env }) {
   const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
   let block;
 
-  const rid = url.searchParams.get("r");
-  if (rid !== null) {
+  const rid = url.searchParams.get("r"), refCode = url.searchParams.get("ref");
+  if (refCode !== null) {
+    let data = null;
+    const base = env.SUPABASE_URL || DEFAULT_URL, key = env.SUPABASE_ANON_KEY || DEFAULT_KEY;
+    if (REF_CODE.test(refCode)) {
+      try {
+        const r = await fetch(`${base}/rest/v1/rpc/get_referral_meta`, { method: "POST",
+          headers: { apikey: key, ...(key.startsWith("sb_") ? {} : { authorization: `Bearer ${key}` }), "content-type": "application/json" },
+          body: JSON.stringify({ p_code: refCode }) });
+        if (r.ok) data = await r.json();
+      } catch { /* texto genérico */ }
+    }
+    block = referralMeta(data, url.origin, refCode);
+    html = html.replace('<html lang="es">', '<html lang="es" class="proposal-mode">');
+    headers.set("x-robots-tag", "noindex, nofollow");
+    headers.set("cache-control", "public, max-age=0, s-maxage=60");
+  } else if (rid !== null) {
     let data = null;
     const base = env.SUPABASE_URL || DEFAULT_URL, key = env.SUPABASE_ANON_KEY || DEFAULT_KEY;
     if (UUID.test(rid)) {
