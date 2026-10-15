@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1220">
-  <script>try{if(/[?&][pr]=/.test(location.search))document.documentElement.classList.add("proposal-mode")}catch(e){}</script>
+  <script>try{if(/[?&](?:p|r|ref)=/.test(location.search))document.documentElement.classList.add("proposal-mode")}catch(e){}</script>
   <!--OG:start-->
     <title>CierraClick · Propuestas que se cierran por WhatsApp</title>
     <meta name="description" content="Armá una propuesta con opciones, descuentos y seña en minutos. Tu cliente la elige desde el celular y vos cerrás más ventas.">
@@ -177,6 +177,7 @@
           <button class="side-link" data-panel="today">📅 Hoy <span class="count" id="todayCount"></span></button>
           <button class="side-link" data-panel="proposals">▤ Propuestas</button>
           <button class="side-link" data-panel="clients">◉ Clientes</button>
+          <button class="side-link" data-panel="referrals">🎁 Referidos <span class="count" id="refCount"></span></button>
           <button class="side-link" data-panel="performance">⚡ Performance</button>
           <button class="side-link" data-panel="settings">⚙ Configuración</button>
           <div class="side-bottom">
@@ -230,6 +231,11 @@
             <div id="clientsGrid" class="client-grid"></div>
           </div>
 
+          <div id="panel-referrals" class="panel">
+            <div class="panel-head"><div><span class="eyebrow">REFERIDOS</span><h2>Referidos</h2></div><button class="btn btn-secondary" data-ref-settings>⚙ Configurar programa</button></div>
+            <div id="refBody"></div>
+          </div>
+
           <div id="panel-performance" class="panel">
             <div class="panel-head"><div><span class="eyebrow">PERFORMANCE CIERRACLICK</span><h2>Rendimiento comercial</h2><p>Indicadores del embudo de propuestas.</p></div></div>
             <div class="performance-hero">
@@ -274,6 +280,11 @@
               <label>Tiempo de respuesta<select name="profResponse"><option value="">No mostrar</option><option>En minutos</option><option>En menos de 1 hora</option><option>En el día</option><option>En menos de 24 horas</option></select></label>
               <label>Sobre vos (opcional)<textarea name="profBio" rows="3" maxlength="280" placeholder="Ej: Trabajo con materiales de primera y te paso fotos del avance cada día."></textarea></label>
               <div class="portfolio-field"><b>Trabajos realizados <span id="portfolioCount" class="photo-count">0/8</span></b><small>Hasta 8 fotos de trabajos terminados. Se muestran en tus propuestas.</small><div class="photo-grid" id="portfolioGrid"></div><div class="portfolio-actions"><input type="file" id="portfolioInput" accept="image/*" multiple><button type="button" class="btn btn-secondary btn-sm" id="portfolioGalBtn">🖼 Elegir de mi galería</button></div></div>
+              <h3>🎁 Programa de referidos</h3>
+              <p class="field-help">Tus clientes recomiendan, sus amigos te escriben y vos los seguís en «Referidos». Prometé solo lo que vas a cumplir.</p>
+              <label class="check-row"><input type="checkbox" name="refOn"><span>Activar programa de referidos</span></label>
+              <label>Recompensa para quien recomienda<input name="refGive" maxlength="140" placeholder="Ej: 10% de descuento en su próxima compra"></label>
+              <label>Beneficio para el amigo<input name="refGet" maxlength="140" placeholder="Ej: Presupuesto sin cargo y 5% de descuento"></label>
               <div class="form-actions"><button class="btn btn-primary">Guardar configuración</button></div>
             </form>
           </div>
