@@ -296,7 +296,7 @@ function closeModal(id){
   document.body.style.overflow="";
 }
 function resetBuilder(){
-  $("#proposalForm").reset();
+  $("#proposalForm").reset(); builderReferral=null;
   builderKind="service";
   $("#proposalExpires").value=addDays(isoDate(Date.now()),7);
   builderOptions=[newOption({})];
@@ -583,8 +583,9 @@ async function createProposal(e){
   e.preventDefault();
   const p=collectBuilderData();
   galAdd(p.options.flatMap(photosOf)).catch(()=>{});
-  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,options:p.options.map(({photo,photos,...o})=>o),id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined,bonusText:undefined,bonusHours:undefined,slotsLeft:undefined,slotsLabel:undefined,voice:undefined,holdHours:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);await saveProposalExtras(id,p);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
+  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,options:p.options.map(({photo,photos,...o})=>o),id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined,bonusText:undefined,bonusHours:undefined,slotsLeft:undefined,slotsLabel:undefined,voice:undefined,holdHours:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);await saveProposalExtras(id,p);await linkReferral(id);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
   state.proposals.unshift(p);
+  linkReferral(p.id);
   const existing=state.clients.find(c=>c.phone===p.client.phone);
   if(existing) existing.proposals+=1;
   else state.clients.unshift({name:p.client.name,phone:p.client.phone,proposals:1});
@@ -755,7 +756,7 @@ function renderGreeting(){
 }
 let _engBoot=false;
 function renderDashboard(){
-  if(Cloud.on&&currentUser&&!_engBoot){_engBoot=true;loadEngTotals();loadReviews();registerOwnerDevice();}
+  if(Cloud.on&&currentUser&&!_engBoot){_engBoot=true;loadEngTotals();loadReviews();registerOwnerDevice();loadReferrals();}
   renderGreeting();
   if(syncExpired(state.proposals)) saveState();
   const proposals=state.proposals||[];
@@ -774,6 +775,7 @@ function renderDashboard(){
   const paidBtn=p=>(p.status==="accepted"&&!p.depositPaidAt)?`<button class="text-btn" data-paid="${p.id}">✔ Seña recibida</button>`:"";
   const followBtn=p=>p.status==="lost"?`<button class="text-btn" data-follow="${p.id}">💬 Retomar</button>`:(p.status==="accepted"&&!p.depositPaidAt&&p.depositPct>0)?`<button class="text-btn" data-follow="${p.id}">💸 Pedir seña</button>`:(p.status==="sent"||p.status==="viewed")?`<button class="text-btn" data-follow="${p.id}">${(p.followUps||0)>=3?"✉️ Cierre amable":"🔔 Seguimiento"}</button>`:"";
   const reviewBtn=p=>p.status==="accepted"?`<button class="text-btn" data-ask-review="${p.id}">⭐ Pedir opinión</button>`:"";
+  const refAskBtn=p=>p.status==="accepted"&&refCfg().on?`<button class="text-btn" data-ref-ask="${p.id}">🎁 Pedir recomendación</button>`:"";
   const improveBtn=p=>["sent","viewed","expired"].includes(p.status)?`<button class="text-btn" data-improve="${p.id}">✨ Mejorar oferta</button>`:"";
   const lostBtn=p=>["sent","viewed","expired"].includes(p.status)?`<button class="text-btn" data-lost="${p.id}">✖ Perdida</button>`:"";
   const items=todayItems();
@@ -791,9 +793,9 @@ function renderDashboard(){
     <td>${money(finalPrice(chosenOf(p)))}</td>
     <td><span class="badge ${p.status}">${statusLabel(p.status)}</span><br><small>${heat(p)}${engBadge(p)}</small></td>
     <td>${p.views||0}</td><td>${relativeTime(p.createdAt)}</td>
-    <td class="actions">${followBtn(p)}${paidBtn(p)}${improveBtn(p)}${lostBtn(p)}${reviewBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">📊 Atención</button></td></tr>`).join("");
+    <td class="actions">${followBtn(p)}${paidBtn(p)}${improveBtn(p)}${lostBtn(p)}${reviewBtn(p)}${refAskBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">📊 Atención</button></td></tr>`).join("");
   $("#clientsGrid").innerHTML=(state.clients||[]).map(c=>`<div class="client"><h3>${escapeHtml(c.name)}</h3><p>${escapeHtml(c.phone)}</p><p>${c.proposals||0} propuesta(s)</p></div>`).join("");
-  renderPerformance();
+  renderPerformance(); renderReferrals();
   $$("[data-open]").forEach(b=>b.addEventListener("click",()=>openPublic(b.dataset.open,true)));
   $$("[data-follow]").forEach(b=>b.addEventListener("click",()=>followUp(b.dataset.follow)));
   $$("[data-lost]").forEach(b=>b.addEventListener("click",()=>openLost(b.dataset.lost)));
@@ -1188,7 +1190,7 @@ function attachReview(p){
 function renderAcceptedState(p){
   if(!p.review&&Cloud.on&&state.business.review) p.review=state.business.review;
   renderAcceptedStateBase(p);
-  const card=$("#publicContent .public-card"); if(card){card.insertAdjacentHTML("beforeend",reviewFormMarkup(p)); attachReview(p);}
+  const card=$("#publicContent .public-card"); if(card){card.insertAdjacentHTML("beforeend",reviewFormMarkup(p)); attachReview(p); card.insertAdjacentHTML("beforeend",refCardMarkup(p)); attachRefCard(p);}
 }
 /* ===== Pedir opinión (dentro o fuera de la plataforma) ===== */
 const reviewLink=t=>`${location.origin}${location.pathname.replace(/index\.html$/,"")}?r=${t}`;
@@ -1443,7 +1445,7 @@ function bind(){
   // Performance-first: avoid intercepting the public URL until DOM is ready.
   const params=new URLSearchParams(location.search);
   const proposalId=params.get("p");
-  if(PROPOSAL_MODE){ params.get("r")?openReviewLink(params.get("r")):openPublicLink(proposalId); }
+  if(PROPOSAL_MODE){ params.get("ref")?openReferralPage(params.get("ref")):params.get("r")?openReviewLink(params.get("r")):openPublicLink(proposalId); }
   else nav("home");
   document.addEventListener("click",e=>{if(e.target.closest("[data-tool-close]")||e.target.classList.contains("tool-backdrop")) closeModal("toolModal");});
   startNewsPoll();
@@ -1554,7 +1556,7 @@ async function acceptNow(p,o,name){
   }
   p.status="accepted"; p.chosenOption=p.chosenOption||o.id; p.acceptedAt=p.acceptedAt||when;
   p.acceptedName=p.acceptedName||name; p.termsAcceptedAt=p.termsAcceptedAt||when;
-  p.lastEvent=`Cliente aceptó la propuesta (${name}).`;
+  p.lastEvent=`Cliente aceptó la propuesta (${name}).`; referralWon(p);
   state.activity.unshift({icon:"✅",text:`${name} aceptó la propuesta.`,time:"Ahora"});
   saveState(); renderAcceptedState(p); return true;
 }
@@ -2193,7 +2195,7 @@ async function rpcPhotos(name,mk){
 /* ---- «Quién te atiende» ---- */
 function profileOf(x){
   x=x&&typeof x==="object"?x:{}; const s=(v,n)=>String(v||"").trim().replace(/\s+/g," ").slice(0,n);
-  return {trade:s(x.trade,60),area:s(x.area,60),years:Math.min(80,Math.max(0,parseInt(x.years,10)||0)),response:s(x.response,40),bio:String(x.bio||"").trim().slice(0,280),
+  return {trade:s(x.trade,60),area:s(x.area,60),years:Math.min(80,Math.max(0,parseInt(x.years,10)||0)),response:s(x.response,40),bio:String(x.bio||"").trim().slice(0,280),refOn:x.refOn===true||x.refOn==="true",refGive:s(x.refGive,140),refGet:s(x.refGet,140),
     portfolio:(Array.isArray(x.portfolio)?x.portfolio:[]).map(safeImg).filter(Boolean).slice(0,8)};
 }
 const profileEmpty=f=>!(f.trade||f.area||f.years||f.response||f.bio||f.portfolio.length);
@@ -2216,11 +2218,13 @@ function fillProfile(){
   const f=$("#settingsForm"); if(!f||!f.elements.profTrade) return;
   const p=profileOf(state.business&&state.business.profile); state.business.profile=p;
   f.elements.profTrade.value=p.trade; f.elements.profArea.value=p.area; f.elements.profYears.value=p.years||"";
-  f.elements.profResponse.value=p.response; f.elements.profBio.value=p.bio; renderPortfolio();
+  f.elements.profResponse.value=p.response; f.elements.profBio.value=p.bio;
+  if(f.elements.refOn){f.elements.refOn.checked=p.refOn; f.elements.refGive.value=p.refGive; f.elements.refGet.value=p.refGet;}
+  renderPortfolio();
 }
 function readProfile(){
   const f=$("#settingsForm").elements, cur=profileOf(state.business.profile);
-  return profileOf({trade:f.profTrade.value,area:f.profArea.value,years:f.profYears.value,response:f.profResponse.value,bio:f.profBio.value,portfolio:cur.portfolio});
+  return profileOf({trade:f.profTrade.value,area:f.profArea.value,years:f.profYears.value,response:f.profResponse.value,bio:f.profBio.value,refOn:!!(f.refOn&&f.refOn.checked),refGive:f.refGive?f.refGive.value:"",refGet:f.refGet?f.refGet.value:"",portfolio:cur.portfolio});
 }
 function renderPortfolio(){
   const box=$("#portfolioGrid"); if(!box) return; const l=profileOf(state.business.profile).portfolio;
@@ -2357,3 +2361,212 @@ function openLightbox(src,alt){
 }
 document.addEventListener("click",e=>{const im=e.target.closest&&e.target.closest(".who-row img"); if(im) openLightbox(im.getAttribute("src"),im.getAttribute("alt"));});
 document.addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ") return; const im=e.target.closest&&e.target.closest(".who-row img"); if(im){e.preventDefault(); openLightbox(im.getAttribute("src"),im.getAttribute("alt"));}});
+
+/* ===== v38: sistema de referidos ===== */
+/* Cliente que compró → recibe su link personal → su amigo ve tus trabajos y opiniones y te escribe → vos lo seguís en «Referidos»
+   → si compra, queda como cerrado y con recompensa pendiente para quien recomendó. */
+var builderReferral=null, _refs=null, _refErr="";
+const REF_STATUS={new:"Nuevo",contacted:"Contactado",proposal:"Propuesta enviada",won:"Cerrado ✔",lost:"No avanzó"};
+const refCfg=()=>{const f=profileOf(state.business&&state.business.profile); return {on:f.refOn,give:f.refGive,get:f.refGet};};
+const refLink=code=>`${location.origin}${location.pathname.replace(/index\.html$/,"")}?ref=${code}`;
+const isTableMissing=e=>!!e&&(e.code==="42P01"||e.code==="PGRST205"||/could not find the table|does not exist/i.test(e.message||""));
+
+/* ---- código personal de cada cliente ---- */
+function localRefCode(p){
+  if(!p.refCode){
+    const a=new Uint8Array(5);
+    if(window.crypto&&crypto.getRandomValues) crypto.getRandomValues(a); else a.forEach((_,i)=>{a[i]=Math.floor(Math.random()*256);});
+    p.refCode=Array.from(a,b=>b.toString(16).padStart(2,"0")).join(""); saveState();
+  }
+  return p.refCode;
+}
+async function getRefCode(p,owner){
+  if(Cloud.on){
+    try{return await Cloud.rpc(owner?"get_owner_referral_code":"get_proposal_referral_code",{p_id:p.id});}
+    catch(e){throw isMissingFn(e)?new Error("Falta ejecutar supabase_v8_referidos.sql en Supabase."):e;}
+  }
+  return localRefCode(p);
+}
+
+/* ---- 1) Lo que ve el cliente que compró ---- */
+function refCardMarkup(p){
+  const c=refCfg(); if(!c.on||p.status!=="accepted") return "";
+  const e=escapeHtml;
+  return `<section class="ref-card" data-ref-card><h4>🎁 ¿Conocés a alguien que lo necesite?</h4>
+    <p>Recomendanos y ayudás a otra persona a resolverlo con alguien de confianza.</p>
+    ${c.give?`<div class="ref-reward"><b>Vos recibís</b><span>${e(c.give)}</span></div>`:""}
+    ${c.get?`<div class="ref-reward alt"><b>Tu amigo recibe</b><span>${e(c.get)}</span></div>`:""}
+    <div class="ref-actions"><a class="btn btn-primary" id="refShare" role="button" aria-disabled="true" target="_blank" rel="noopener">💬 Recomendar por WhatsApp</a><button type="button" class="btn btn-secondary" id="refCopy" disabled>Copiar mi link</button></div>
+    <small>${c.give?"La recompensa se entrega cuando la persona que recomendás compra.":"Tu link es personal: así sabemos quién nos recomendó."}</small></section>`;
+}
+async function attachRefCard(p){
+  const sh=$("#refShare"); if(!sh) return;
+  try{
+    const code=await getRefCode(p,false); if(!code) throw new Error("sin código");
+    const link=refLink(code), c=refCfg(), biz=state.business.name||"este negocio";
+    const msg=`Hola! Te recomiendo a ${biz}. Mirá sus trabajos y las opiniones de sus clientes, y pedí tu presupuesto 👇\n${link}${c.get?`\nBeneficio para vos: ${c.get}`:""}`;
+    sh.href=`https://wa.me/?text=${encodeURIComponent(msg)}`; sh.removeAttribute("aria-disabled");
+    const cp=$("#refCopy"); cp.disabled=false;
+    cp.onclick=async()=>{try{await navigator.clipboard.writeText(link); toast("Link copiado.");}catch(err){window.prompt("Copiá tu link:",link);}};
+  }catch(e){const card=$("[data-ref-card]"); if(card) card.remove();}
+}
+
+/* ---- 2) La página que ve el amigo (?ref=CODIGO) ---- */
+function localRegisterReferral(code,name,phone,note,referrer){
+  const l=(state.referrals=state.referrals||[]);
+  if(l.some(r=>r.phone===phone&&Date.now()-r.at<30*864e5)) return;
+  l.unshift({id:"r-"+Math.random().toString(36).slice(2,9),code,referrer:referrer||"",friend:name,phone,note,status:"new",reward:"none",proposalId:"",at:Date.now()});
+  saveState();
+}
+async function openReferralPage(code){
+  const card=$("#publicContent"), e=escapeHtml; let data=null, refFull="";
+  try{
+    if(Cloud.on) data=await Cloud.rpc("get_referral_page",{p_code:code});
+    else{const p=(state.proposals||[]).find(x=>x.refCode===code); if(p){refFull=fullName(p.client.name); data={business:{},referrer:firstName(p.client.name)};}}
+  }catch(err){}
+  if(!data){card.innerHTML=`<div class="public-card"><div class="public-greeting">Este link no está disponible</div><p style="color:#64748b">Pedile a quien te lo pasó que te envíe uno nuevo.</p></div>`; return;}
+  if(Cloud.on){const b=data.business||{}; state.business={...state.business,name:b.name||state.business.name,whatsapp:b.whatsapp||"",brandColor:b.brandColor||state.business.brandColor,photo:b.photo||"",...trustFields(data)};}
+  const c=refCfg(), b=state.business, ref=data.referrer||"", biz=b.name||"este negocio";
+  card.innerHTML=`<div class="public-card ref-page" style="--brand:${brandStyle()}">
+    <div class="public-brand">${avatarHtml()}${e(biz.toUpperCase())}${ratingChip()}</div>${whoChip()}
+    <div class="ref-hero"><span class="ref-badge">🤝 ${ref?`Recomendado por ${e(ref)}`:"Recomendado por un cliente"}</span>
+      <h2>${ref?`${e(ref)} te recomendó a ${e(biz)}`:`Te recomendaron a ${e(biz)}`}</h2>
+      <p>Mirá sus trabajos, leé las opiniones de sus clientes y pedí tu presupuesto sin compromiso.</p></div>
+    ${c.get?`<div class="ref-reward alt"><b>🎁 Beneficio para vos</b><span>${e(c.get)}</span></div>`:""}
+    ${whoMarkup()}
+    <form class="ref-form" id="refForm" novalidate><h3>Pedí tu presupuesto</h3>
+      <label>Tu nombre<input id="refName" autocomplete="name" maxlength="80" placeholder="Ej: María Gómez"></label>
+      <label>Tu WhatsApp<input id="refPhone" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="Ej: 3511234567"></label>
+      <label>¿Qué necesitás? <small>(opcional)</small><textarea id="refNote" rows="2" maxlength="300" placeholder="Contanos en una línea"></textarea></label>
+      <p class="imp-err" id="refErr" role="alert" hidden></p>
+      <button type="submit" class="btn btn-primary btn-block" id="refGo">Pedir mi presupuesto</button>
+      <small class="ref-priv">Usamos tus datos solo para que ${e(biz)} te contacte. No se publican.</small></form>
+    ${reviewsMarkup({list:true})}</div>`;
+  $("#refForm").addEventListener("submit",async ev=>{
+    ev.preventDefault();
+    const name=$("#refName").value.trim(), phone=normalizePhone($("#refPhone").value), note=$("#refNote").value.trim().slice(0,300), err=$("#refErr"), btn=$("#refGo");
+    const fail=m=>{err.textContent=m; err.hidden=false;};
+    err.hidden=true;
+    if(name.length<2) return fail("Escribí tu nombre.");
+    if(phone.length<8||phone.length>15) return fail("Revisá tu número de WhatsApp (con código de área).");
+    btn.disabled=true;
+    try{if(Cloud.on) await Cloud.rpc("register_referral",{p_code:code,p_name:name,p_phone:phone,p_note:note}); else localRegisterReferral(code,name,phone,note,refFull);}
+    catch(ex){btn.disabled=false; return fail(ex&&ex.message&&!/function|schema/i.test(ex.message)?ex.message:"No pudimos registrar tu consulta. Probá de nuevo en un rato.");}
+    const msg=`Hola ${biz}! Soy ${name}. Me recomendó ${ref||"un cliente"} y me gustaría pedir un presupuesto${note?": "+note:"."}`;
+    $("#refForm").innerHTML=`<div class="ref-done"><h3>✅ ¡Listo, ${e(firstName(name)||name)}!</h3><p>Registramos tu consulta: ${e(biz)} ya puede verla. Para recibir tu presupuesto más rápido, escribile por WhatsApp.</p><a class="btn btn-primary btn-block" target="_blank" rel="noopener" href="https://wa.me/${normalizePhone(b.whatsapp)}?text=${encodeURIComponent(msg)}">💬 Abrir WhatsApp</a></div>`;
+  });
+}
+
+/* ---- 3) Panel «Referidos» del vendedor ---- */
+async function loadReferrals(){
+  if(!(Cloud.on&&currentUser)) return;
+  try{
+    const sb=await Auth.client();
+    const {data,error}=await sb.from("referrals").select("id,code,referrer_name,friend_name,friend_phone,note,status,reward_status,proposal_id,created_at").order("created_at",{ascending:false}).limit(200);
+    if(error) throw error;
+    _refErr=""; _refs=data.map(r=>({id:r.id,code:r.code,referrer:r.referrer_name,friend:r.friend_name,phone:r.friend_phone,note:r.note,status:r.status,reward:r.reward_status,proposalId:r.proposal_id,at:new Date(r.created_at).getTime()}));
+  }catch(e){_refErr=isTableMissing(e)?"missing":"error"; _refs=_refs||[];}
+  renderReferrals();
+}
+const getRefs=()=>Cloud.on?(_refs||[]):(state.referrals||[]);
+async function updateReferral(id,patch){
+  const r=getRefs().find(x=>x.id===id); if(!r) return;
+  Object.assign(r,patch);
+  if(Cloud.on){
+    try{
+      const sb=await Auth.client(), row={updated_at:new Date().toISOString()};
+      if(patch.status) row.status=patch.status; if(patch.reward) row.reward_status=patch.reward;
+      const {error}=await sb.from("referrals").update(row).eq("id",id); if(error) throw error;
+    }catch(ex){toast(ex.message||"No se pudo actualizar."); await loadReferrals(); return;}
+  }else saveState();
+  renderReferrals();
+}
+async function deleteReferral(id){
+  if(!confirm("¿Eliminar este referido? No se puede deshacer.")) return;
+  if(Cloud.on){
+    try{const sb=await Auth.client(); const {error}=await sb.from("referrals").delete().eq("id",id); if(error) throw error; _refs=(_refs||[]).filter(x=>x.id!==id);}
+    catch(ex){return toast(ex.message||"No se pudo eliminar.");}
+  }else{state.referrals=(state.referrals||[]).filter(x=>x.id!==id); saveState();}
+  renderReferrals();
+}
+function refRowMarkup(r){
+  const e=escapeHtml, d=new Date(r.at).toLocaleDateString("es-AR",{day:"numeric",month:"short"});
+  const opts=Object.entries(REF_STATUS).map(([k,v])=>`<option value="${k}"${k===r.status?" selected":""}>${v}</option>`).join("");
+  return `<article class="ref-item" data-ref="${e(r.id)}">
+    <div class="ri-main"><b>${e(r.friend)}</b><span>📱 ${e(r.phone)}</span>${r.note?`<p>“${e(r.note)}”</p>`:""}<small>${r.referrer?`Lo recomendó ${e(r.referrer)} · `:""}${d}</small></div>
+    <div class="ri-side"><span class="ri-chip st-${e(r.status)}">${REF_STATUS[r.status]||e(r.status)}</span><select data-ref-status aria-label="Cambiar estado">${opts}</select></div>
+    <div class="ri-actions"><button type="button" class="text-btn" data-ref-act="contact">💬 Escribirle</button><button type="button" class="text-btn" data-ref-act="proposal">📝 Crear propuesta</button>${r.status==="won"&&r.reward==="pending"?`<button type="button" class="text-btn gift" data-ref-act="give">🎁 Recompensa entregada</button>`:""}${r.reward==="given"?`<span class="ri-given">🎁 Recompensa entregada</span>`:""}<button type="button" class="text-btn danger" data-ref-act="del">Eliminar</button></div></article>`;
+}
+function renderReferrals(){
+  const body=$("#refBody"); if(!body) return;
+  const c=refCfg(), list=getRefs(), nNew=list.filter(r=>r.status==="new").length, badge=$("#refCount");
+  if(badge) badge.textContent=nNew?String(nNew):"";
+  if(Cloud.on&&_refErr==="missing"){body.innerHTML=`<div class="ref-banner warn"><b>Falta un paso en Supabase</b><span>Ejecutá <code>supabase_v8_referidos.sql</code> en el SQL Editor para activar los referidos.</span></div>`; return;}
+  const won=list.filter(r=>r.status==="won").length, pend=list.filter(r=>r.reward==="pending").length, rate=list.length?Math.round(100*won/list.length):0;
+  const off=!c.on?`<div class="ref-banner"><b>El programa está desactivado</b><span>Activalo y definí la recompensa en Configuración: tus clientes verán «Recomendanos» al aceptar.</span><button type="button" class="btn btn-secondary btn-sm" data-ref-settings>Configurar programa</button></div>`:"";
+  const how=!list.length?`<ol class="ref-how"><li><b>Tu cliente compra</b><span>Al aceptar ve su link personal para recomendarte. También podés enviárselo con «🎁 Pedir recomendación» en Propuestas.</span></li><li><b>Su amigo te escribe</b><span>Entra, mira tus trabajos y opiniones, y deja su consulta. Aparece acá.</span></li><li><b>Cerrás y recompensás</b><span>Creás la propuesta desde acá y, cuando compra, queda cerrada con la recompensa pendiente.</span></li></ol>`:"";
+  body.innerHTML=`${off}<div class="ref-stats"><div><strong>${list.length}</strong><span>Recomendaciones</span></div><div><strong>${won}</strong><span>Cerradas${list.length?` · ${rate}%`:""}</span></div><div><strong>${pend}</strong><span>Recompensas pendientes</span></div></div>${how}<div class="ref-list">${list.map(refRowMarkup).join("")}</div>`;
+}
+
+/* ---- acciones ---- */
+function proposalFromReferral(id){
+  const r=getRefs().find(x=>x.id===id); if(!r) return;
+  openBuilder(); if(!$("#clientName")) return;
+  builderReferral=id;
+  const n=$("#clientName"), ph=$("#clientPhone"); n.value=r.friend; ph.value=r.phone;
+  [n,ph].forEach(el=>el.dispatchEvent(new Event("input",{bubbles:true})));
+  toast(`Propuesta para ${r.friend}: quedará vinculada a esta recomendación.`);
+}
+async function linkReferral(pid){
+  const rid=builderReferral; if(!rid) return; builderReferral=null;
+  if(Cloud.on){
+    try{
+      const sb=await Auth.client();
+      await sb.from("proposals").update({referral_id:rid}).eq("id",pid);
+      await sb.from("referrals").update({status:"proposal",proposal_id:pid,updated_at:new Date().toISOString()}).eq("id",rid).neq("status","won");
+      await loadReferrals();
+    }catch(e){}
+  }else{
+    const r=getRefs().find(x=>x.id===rid); if(r&&r.status!=="won"){r.status="proposal"; r.proposalId=pid;}
+    const p=state.proposals.find(x=>x.id===pid); if(p) p.referralId=rid;
+    saveState(); renderReferrals();
+  }
+}
+function referralWon(p){ // modo local: el trigger de Supabase hace lo mismo en la nube
+  if(Cloud.on||!p||!p.referralId) return;
+  const r=(state.referrals||[]).find(x=>x.id===p.referralId);
+  if(r){r.status="won"; if(r.reward==="none") r.reward="pending";}
+}
+async function askReferral(pid){
+  const p=state.proposals.find(x=>x.id===pid); if(!p) return;
+  if(!refCfg().on) return toast("Activá el programa de referidos en Configuración.");
+  try{
+    const code=await getRefCode(p,true); if(!code) throw new Error("No se pudo crear el link.");
+    const c=refCfg(), link=refLink(code);
+    const msg=`${hello(firstName(p.client.name))} 🙌 Gracias por confiar en ${state.business.name}. Si conocés a alguien que lo necesite, pasale este link: ${link}${c.give?`\nSi compra, vos recibís: ${c.give}.`:""}${c.get?`\nY tu amigo recibe: ${c.get}.`:""}`;
+    window.open(`https://wa.me/${normalizePhone(p.client.phone)}?text=${encodeURIComponent(msg)}`,"_blank","noopener");
+  }catch(ex){toast(ex.message||"No se pudo preparar el mensaje.");}
+}
+document.addEventListener("click",e=>{
+  const T=e.target&&e.target.closest?e.target:null; if(!T) return;
+  const act=T.closest("[data-ref-act]");
+  if(act){
+    const id=(act.closest("[data-ref]")||{dataset:{}}).dataset.ref, r=getRefs().find(x=>x.id===id); if(!r) return;
+    if(act.dataset.refAct==="contact"){
+      const msg=`Hola ${firstName(r.friend)||r.friend}! Soy ${state.business.name}. Me contó ${firstName(r.referrer)||"un cliente"} que estás buscando ayuda con esto 🙌 Contame qué necesitás y te armo un presupuesto sin compromiso.`;
+      window.open(`https://wa.me/${normalizePhone(r.phone)}?text=${encodeURIComponent(msg)}`,"_blank","noopener");
+      if(r.status==="new") updateReferral(id,{status:"contacted"});
+    }
+    else if(act.dataset.refAct==="proposal") proposalFromReferral(id);
+    else if(act.dataset.refAct==="give") updateReferral(id,{reward:"given"});
+    else if(act.dataset.refAct==="del") deleteReferral(id);
+    return;
+  }
+  const ask=T.closest("[data-ref-ask]"); if(ask) return askReferral(ask.dataset.refAsk);
+  if(T.closest("[data-ref-settings]")){showPanel("settings"); setTimeout(()=>{const f=$("#settingsForm"); if(f&&f.elements.refOn) f.elements.refOn.focus();},60);}
+});
+document.addEventListener("change",e=>{
+  const s=e.target.closest&&e.target.closest("[data-ref-status]"); if(!s) return;
+  const id=s.closest("[data-ref]").dataset.ref, r=getRefs().find(x=>x.id===id); if(!r) return;
+  updateReferral(id,{status:s.value,...(s.value==="won"&&r.reward==="none"?{reward:"pending"}:{})});
+});
