@@ -1021,10 +1021,7 @@ body.gal-open{overflow:hidden}
 .alt-banner small{color:#92400e}
 @media (max-width:640px){.dv-facts{grid-template-columns:repeat(2,1fr)}.dv-reasons{grid-template-columns:1fr}.dv-stage{margin-right:0}.dv-top{flex-direction:column}}
 @media (prefers-reduced-motion:reduce){.dv-reason{transition:none}}
-/* vista del cliente: opciones apiladas y detalles plegables */
-.public-card .choice-grid.cc-carousel{display:grid!important;grid-template-columns:1fr!important;overflow:visible!important;scroll-snap-type:none!important;gap:14px!important}
-.public-card .cc-carousel .choice{flex:none!important;transform:none!important;opacity:1!important;scroll-snap-align:none!important;scroll-snap-stop:normal!important}
-.public-card .cc-nav{display:none!important}
+/* vista del cliente: detalles plegables (las opciones van en horizontal, con carrusel) */
 .public-intro{margin:6px 0 0;font-size:14.5px;line-height:1.5;color:#475569}
 .contact-chip{margin:6px 0 0;font-size:12.5px;font-weight:700;color:var(--muted)}.contact-chip a{color:inherit}
 .choice-more{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
