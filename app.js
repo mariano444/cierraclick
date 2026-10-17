@@ -173,7 +173,7 @@ const Auth={
 const Cloud={
   get on(){return Auth.remote;},
   async rpc(name,args={}){const {data,error}=await (await Auth.client()).rpc(name,args);if(error)throw error;return data;},
-  proposal(row){return {...row,offerUpdate:row.offer_update||null,lostReason:row.lost_reason,recontactAt:row.recontact_at?new Date(row.recontact_at).getTime():null,client:{name:row.clients?.name||"Cliente",phone:row.clients?.phone||""},expiresAt:row.expires_at,cashDiscount:Number(row.cash_discount||0),depositPct:Number(row.deposit_pct||0),chosenOption:row.chosen_option_id,createdAt:row.created_at,acceptedAt:row.accepted_at,lastViewedAt:row.last_viewed_at,lastFollowUpAt:row.last_follow_up_at,proofSentAt:row.proof_sent_at,depositPaidAt:row.deposit_paid_at,depositStarted:row.deposit_started||0,followUps:row.follow_ups||0,holdHours:row.hold_hours||0,payExitAt:row.pay_exit_at?new Date(row.pay_exit_at).getTime():null,bonusText:row.bonus_text||"",bonusHours:row.bonus_hours||0,slotsLeft:row.slots_left??null,slotsLabel:row.slots_label||"",acceptedName:row.accepted_name||"",termsAcceptedAt:row.terms_accepted_at||null,options:(row.proposal_options||[]).sort((a,b)=>a.position-b.position).map(o=>({id:o.id,name:o.name,price:Number(o.price),discountType:o.discount_type,discountValue:Number(o.discount_value),description:o.description,hasInstallments:o.has_installments,installments:o.installments,hasWarranty:o.has_warranty,warranty:o.warranty,features:o.features,terms:o.terms,recommended:o.recommended}))};},
+  proposal(row){return {...row,follow:row.follow&&typeof row.follow==="object"?row.follow:null,versionOf:row.version_of||null,versionNo:row.version_no||1,excludes:Array.isArray(row.extra&&row.extra.excludes)?row.extra.excludes:[],deliveryTime:(row.extra&&row.extra.deliveryTime)||"",offerUpdate:row.offer_update||null,lostReason:row.lost_reason,recontactAt:row.recontact_at?new Date(row.recontact_at).getTime():null,client:{name:row.clients?.name||"Cliente",phone:row.clients?.phone||""},expiresAt:row.expires_at,cashDiscount:Number(row.cash_discount||0),depositPct:Number(row.deposit_pct||0),chosenOption:row.chosen_option_id,createdAt:row.created_at,acceptedAt:row.accepted_at,lastViewedAt:row.last_viewed_at,lastFollowUpAt:row.last_follow_up_at,proofSentAt:row.proof_sent_at,depositPaidAt:row.deposit_paid_at,depositStarted:row.deposit_started||0,followUps:row.follow_ups||0,holdHours:row.hold_hours||0,payExitAt:row.pay_exit_at?new Date(row.pay_exit_at).getTime():null,bonusText:row.bonus_text||"",bonusHours:row.bonus_hours||0,slotsLeft:row.slots_left??null,slotsLabel:row.slots_label||"",acceptedName:row.accepted_name||"",termsAcceptedAt:row.terms_accepted_at||null,options:(row.proposal_options||[]).sort((a,b)=>a.position-b.position).map(o=>({id:o.id,name:o.name,price:Number(o.price),discountType:o.discount_type,discountValue:Number(o.discount_value),description:o.description,hasInstallments:o.has_installments,installments:o.installments,hasWarranty:o.has_warranty,warranty:o.warranty,features:o.features,terms:o.terms,recommended:o.recommended}))};},
   async hydrate(){
     if(!this.on||!currentUser)return;
     const sb=await Auth.client(); await this.rpc("refresh_expired").catch(()=>{});
@@ -198,7 +198,7 @@ const Cloud={
       this.pub("get_public_v3",{p_id:id}).catch(()=>null),
       this.pub("get_public_option_photos",{p_id:id}).catch(()=>null),
       this.pub("get_public_business_profile",{p_id:id}).catch(()=>null),
-      this.pub("get_public_offer_update",{p_id:id}).catch(()=>null),
+      this.pub("get_public_proposal_extra",{p_id:id}).catch(()=>this.pub("get_public_offer_update",{p_id:id}).then(o=>({offerUpdate:o})).catch(()=>null)),
       this.pub("get_public_reviews_by_proposal",{p_id:id}).catch(()=>null)]);
     if(!r) return r;
     if(x) r.business={...(r.business||{}),...x};
@@ -206,7 +206,11 @@ const Cloud={
     if(ph&&r.options) r.options.forEach(o=>{const l=ph[o.id]; if(Array.isArray(l)&&l.length) o.photos=l;});
     if(v3){applyV3(r,v3); r.business={...(r.business||{}),afterSteps:v3.afterSteps||""};}
     if(pf&&typeof pf==="object") r.business={...(r.business||{}),profile:profileOf(pf)};
-    if(ou&&typeof ou==="object"){r.offerUpdate=ou; applyOfferUpdate(r);}
+    if(ou&&typeof ou==="object"){
+      const ex=("offerUpdate" in ou||"excludes" in ou||"deliveryTime" in ou)?ou:{offerUpdate:ou};
+      if(ex.offerUpdate){r.offerUpdate=ex.offerUpdate; applyOfferUpdate(r);}
+      if(Array.isArray(ex.excludes)) r.excludes=ex.excludes; if(ex.deliveryTime) r.deliveryTime=ex.deliveryTime;
+    }
     if(tr&&typeof tr==="object") r.business={...(r.business||{}),...trustFields(tr)};
     return r;
   }
@@ -296,7 +300,7 @@ function closeModal(id){
   document.body.style.overflow="";
 }
 function resetBuilder(){
-  $("#proposalForm").reset(); builderReferral=null;
+  $("#proposalForm").reset(); builderReferral=null; builderAltOf=null;
   builderKind="service";
   $("#proposalExpires").value=addDays(isoDate(Date.now()),7);
   builderOptions=[newOption({})];
@@ -430,6 +434,7 @@ function collectBuilderData(){
     title:$("#proposalTitle").value.trim(),
     validity:"",expiresAt:builderExpiry(),payments:selectedPayments(),cashDiscount:builderCash(),depositPct:builderDep(),
     includes:$("#includes").value.split("\n").map(x=>x.trim()).filter(Boolean),
+    excludes:$("#excludes").value.split("\n").map(x=>x.trim()).filter(Boolean).slice(0,12),deliveryTime:$("#deliveryTime").value.trim().slice(0,80),
     conditions:$("#conditions").value.trim(),
     ...perksFromForm(),
     options,
@@ -441,8 +446,8 @@ function collectBuilderData(){
 function optionMarkup(p,o,mode){
   const multi=p.options.length>1, rec=o.recommended&&multi, d=discountAmount(o), fin=finalPrice(o);
   const badge=o.discountType==="percent"?`-${Math.round(Number(o.discountValue)||0)}%`:`Ahorrás ${money(d)}`;
-  const inst=o.hasInstallments&&o.installments>1?`<p class="meta-row"><b>${o.installments} cuotas</b> de ${money(fin/o.installments)}</p>`:"";
-  const dep=p.depositPct>0?`<p class="meta-row">🔒 Seña para reservar: <b>${money(depositOf(p,o))}</b> (${p.depositPct}%)</p>`:"";
+  const inst=o.hasInstallments&&o.installments>1?`<p class="meta-row"><b>${o.installments} cuotas</b> de ${money(fin/o.installments)} <small>(total ${money(fin)})</small></p>`:"";
+  const dep=p.depositPct>0?`<p class="meta-row">🔒 Seña para reservar: <b>${money(depositOf(p,o))}</b> (${p.depositPct}%) · saldo ${money(fin-depositOf(p,o))}</p>`:"";
   const meta=(inst+String(cashLine(p,o)||"")+dep).trim();
   const feats=(o.features||"").trim()?`<ul class="feat">${o.features.split("\n").map(x=>x.trim()).filter(Boolean).map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul>`:"";
   return `
@@ -456,11 +461,8 @@ function optionMarkup(p,o,mode){
       ${p.status!=="expired"?proofLine(p,o):""}
       ${o.why?`<blockquote class="choice-why">💬 ${escapeHtml(o.why)}<small>— ${escapeHtml(state.business.name||"")}</small></blockquote>`:""}
       ${meta?`<div class="choice-meta">${meta}</div>`:""}
-      ${o.description?`<p>${escapeHtml(o.description)}</p>`:""}
-      ${o.hasWarranty&&o.warranty?`<p>🛡️ Garantía: ${escapeHtml(o.warranty)}</p>`:""}
-      ${feats}
       ${diffMarkup(p,o)}
-      ${(o.terms||"").trim()?`<details class="terms"><summary>Términos y condiciones</summary><p>${escapeHtml(o.terms)}</p></details>`:""}
+      ${(()=>{const body=`${o.description?`<p>${escapeHtml(o.description)}</p>`:""}${o.hasWarranty&&o.warranty?`<p>🛡️ Garantía: ${escapeHtml(o.warranty)}</p>`:""}${feats}${(o.terms||"").trim()?`<details class="terms"><summary>Términos y condiciones</summary><p>${escapeHtml(o.terms)}</p></details>`:""}`;return !body.trim()?"":(multi&&mode==="full")?`<details class="choice-more"><summary>Ver qué incluye</summary>${body}</details>`:body;})()}
       ${mode==="full"&&multi&&p.status!=="expired"?`<button class="select" data-select-option="${escapeHtml(o.id)}" aria-label="Elegir ${escapeHtml(o.name)}">Elegir esta opción</button>`:""}
     </article>`;
 }
@@ -504,9 +506,10 @@ function publicProposalMarkup(p, mode="full"){
   return `
     <div class="public-card" data-public-id="${escapeHtml(p.id)}" style="--pc:${brandStyle()}">
       <div class="public-brand">${avatarHtml()}${escapeHtml(state.business.name).toUpperCase()}${ratingChip()}</div>
-      ${whoChip()}
+      ${whoChip()}${contactChip()}
       <div class="public-greeting">${escapeHtml(hello(p.client.name))} 👋</div>
       <div class="public-title">${escapeHtml(p.title)}</div>
+      ${mode==="full"&&p.status!=="expired"?`<p class="public-intro">${escapeHtml(introText(p))}</p>`:""}
       ${mode==="full"?`<span class="valid">${expiryLine(p)}</span>`:""}
       ${offerBannerMarkup(p)}
       ${p.status!=="expired"?voiceMarkup(p):""}
@@ -514,18 +517,13 @@ function publicProposalMarkup(p, mode="full"){
       ${p.status!=="expired"?perksMarkup(p):""}
       ${p.status!=="expired"?compareMarkup(p,mode):""}
       ${multi&&mode==="full"&&p.status!=="expired"?pickHelperMarkup(p):""}${multi&&mode==="full"?carouselTabsMarkup(p):""}<div class="choice-grid n${p.options.length}${multi&&mode==="full"?" cc-carousel":""}"${multi&&mode==="full"?' tabindex="0" role="group" aria-roledescription="carrusel" aria-label="Opciones de la propuesta"':""}>${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
-      ${p.status!=="expired"?'<h4 class="flow-h">Cómo se paga y qué incluye</h4>':""}
-      <div class="public-includes" data-sec="incluye">${includes}</div>
-      <div data-sec="pago">${payBlock(p)}</div>
-      <p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>
-      ${p.status!=="expired"?afterMarkup(p):""}
+      ${p.status!=="expired"?detailsMarkup(p):`<div class="public-includes" data-sec="incluye">${includes}</div><div data-sec="pago">${payBlock(p)}</div><p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>`}
       ${p.status!=="expired"?whoMarkup():""}${mode==="full"&&p.status!=="expired"?reviewsMarkup()+assuranceMarkup(p):""}
-      ${mode==="full"&&p.status!=="expired"?`<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div>${acceptFormMarkup(p)}<div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div>`:""}
+      ${mode==="full"&&p.status!=="expired"?`${consultMarkup(p)}<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div>${acceptFormMarkup(p)}`:""}
       <div class="public-actions">
         ${mode==="full"&&p.status!=="expired"?`<div class="cta-note" id="ctaNote"></div>`:""}
         ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${escapeHtml(ctaLabel(p,chosenOf(p)))}</button>`:''}
-        ${mode==="full"?`<a class="public-whatsapp" id="publicWhatsapp" href="#" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}
-        ${mode==="full"&&p.status!=="expired"?`<button type="button" class="public-doubt" id="doubtBtn">🙋 Tengo una duda</button>`:""}
+        ${mode==="full"&&p.status==="expired"?`<a class="public-whatsapp" id="publicWhatsapp" href="#" target="_blank" rel="noopener">💬 Escribir por WhatsApp</a>`:""}
       </div>
       <div class="public-foot">${expiryLine(p)} · Propuesta digital CierraClick</div>
     </div>`;
@@ -539,6 +537,7 @@ function markSelected(id){
 }
 
 function renderBuilderPreview(){
+  try{updateAltBanner();}catch(e){}
   updatePriceTip();
   const p = {
     kind:builderKind,
@@ -546,6 +545,7 @@ function renderBuilderPreview(){
     title:$("#proposalTitle").value||KINDS[builderKind].title,
     expiresAt:builderExpiry(),payments:selectedPayments(),cashDiscount:builderCash(),depositPct:builderDep(),
     includes:$("#includes").value.split("\n").map(x=>x.trim()).filter(Boolean),
+    excludes:$("#excludes").value.split("\n").map(x=>x.trim()).filter(Boolean).slice(0,12),deliveryTime:$("#deliveryTime").value.trim().slice(0,80),
     conditions:$("#conditions").value||"La reserva se confirma con la seña.",
     ...perksFromForm(), createdAt:new Date().toISOString(),
     options:builderOptions.map(o=>({...o,hasWarranty:o.hasWarranty&&!!String(o.warranty).trim(),installments:Number(o.installments)||2,recommended:o.recommended&&builderOptions.length>1}))
@@ -583,9 +583,9 @@ async function createProposal(e){
   e.preventDefault();
   const p=collectBuilderData();
   galAdd(p.options.flatMap(photosOf)).catch(()=>{});
-  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,options:p.options.map(({photo,photos,...o})=>o),id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined,bonusText:undefined,bonusHours:undefined,slotsLeft:undefined,slotsLabel:undefined,voice:undefined,holdHours:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);await saveProposalExtras(id,p);await linkReferral(id);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
+  if(Cloud.on){try{const id=await Cloud.rpc("create_proposal",{p:{...p,options:p.options.map(({photo,photos,...o})=>o),id:undefined,validity:undefined,createdAt:undefined,status:undefined,views:undefined,chosenOption:undefined,acceptedAt:undefined,depositStarted:undefined,lastEvent:undefined,bonusText:undefined,bonusHours:undefined,slotsLeft:undefined,slotsLabel:undefined,voice:undefined,holdHours:undefined}});await Cloud.hydrate();await saveOptionExtras(id,p);await saveProposalExtras(id,p);await saveProposalExtra(id,p);await linkReferral(id);await linkVersion(id);const remote=state.proposals.find(x=>x.id===id);closeModal("builderModal");if(remote)window.open(`https://wa.me/${normalizePhone(remote.client.phone)}?text=${encodeURIComponent(shareText(remote))}`,"_blank","noopener");toast("Propuesta creada y WhatsApp preparado.");return;}catch(ex){return toast(ex.message||"No se pudo crear la propuesta.");}}
   state.proposals.unshift(p);
-  linkReferral(p.id);
+  linkReferral(p.id); linkVersion(p.id);
   const existing=state.clients.find(c=>c.phone===p.client.phone);
   if(existing) existing.proposals+=1;
   else state.clients.unshift({name:p.client.name,phone:p.client.phone,proposals:1});
@@ -611,7 +611,7 @@ async function openPublicLink(id){
   document.documentElement.classList.add("proposal-ready");
 }
 async function openPublic(id,preview=false,quiet=false){
-  if(Cloud.on&&!preview){try{const remote=await Cloud.publicProposal(id);if(!remote)return toast("No se encontró la propuesta.");const p={...remote,createdAt:remote.createdAt||new Date().toISOString()};state.business={...state.business,...remote.business};state.proposals=[p,...state.proposals.filter(x=>x.id!==id)];Cloud.pub("track_proposal",{p_id:id,p_type:"view"}).catch(()=>{});return openPublic(id,true,true);}catch(e){return toast(e.message||"No se pudo abrir la propuesta.");}}
+  if(Cloud.on&&!preview){try{const remote=await Cloud.publicProposal(id);if(!remote)return toast("No se encontró la propuesta.");const p={...remote,createdAt:remote.createdAt||new Date().toISOString()};state.business={...state.business,...remote.business};state.proposals=[p,...state.proposals.filter(x=>x.id!==id)];humanOnce(()=>Cloud.pub("track_proposal",{p_id:id,p_type:"view"}).catch(()=>{}));return openPublic(id,true,true);}catch(e){return toast(e.message||"No se pudo abrir la propuesta.");}}
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
   if(Cloud.on&&currentUser&&!p._ex){p._ex=true;try{const ox=await Cloud.rpc("get_public_option_extras",{p_id:id});(p.options||[]).forEach(o=>{const x=ox&&ox[o.id];if(x){o.why=x.why;o.photo=x.photo;}});}catch(e){}
     try{const ph=await Cloud.rpc("get_public_option_photos",{p_id:id});(p.options||[]).forEach(o=>{const l=ph&&ph[o.id];if(Array.isArray(l)&&l.length)o.photos=l;});}catch(e){}}
@@ -627,7 +627,7 @@ async function openPublic(id,preview=false,quiet=false){
   $("#publicContent").innerHTML=publicProposalMarkup(p,"full");
   if(PROPOSAL_MODE) document.title=`${p.title} · ${state.business.name||"CierraClick"}`;
   const sel=chosenOf(p);
-  $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`${saludoHora()}, ${state.business.name} 👋 Quiero consultar la propuesta${firstName(p.client.name)?` de ${p.client.name}`:""} por ${money(finalPrice(sel))}.`)}`;
+  $("#publicWhatsapp").href=`https://wa.me/${normalizePhone(state.business.whatsapp)}?text=${encodeURIComponent(`Hola, estuve revisando la propuesta “${p.title}”${firstName(p.client.name)?` de ${p.client.name}`:""} y quisiera hacer una consulta antes de avanzar.`)}`;
   markSelected(sel.id);
   openModal("publicModal");
   initChoiceCarousel();
@@ -725,11 +725,13 @@ function renderAcceptedStateBase(p){
       <div class="public-greeting">${paid?"¡Reserva confirmada!":(first?`¡Listo, ${e(first)}!`:"¡Listo!")} ✅</div>
       <p class="pay-lead">${lead}</p>
       <p class="pay-choice">Tu elección: <strong>${e(option.name)}</strong> · ${money(fin)}</p>
+      ${statusTrackMarkup(p,dep,paid)}
       ${p.acceptedName?`<p class="accepted-by">Aceptada por <b>${e(p.acceptedName)}</b>${p.termsAcceptedAt?" · condiciones aceptadas":""}</p>`:""}${bonusWonMarkup(p)}
       ${paid?`<div class="state-note">💰 <b>Seña recibida.</b> ¡Tu reserva está confirmada!</div>`:p.proofSentAt?`<div class="state-note">💸 Avisaste que transferiste. ${e(b.name)} lo está verificando.</div>`:""}
       ${paid||p.proofSentAt?"":holdMarkup(p)}
       ${primary}
       ${afterMarkup(p,true)}
+      ${contactChip()}
       <div class="public-actions">
         ${mainAction}
         <button class="public-whatsapp" id="receiptBtn" type="button">📄 Descargar constancia</button>
@@ -780,7 +782,7 @@ function renderDashboard(){
   const lostBtn=p=>["sent","viewed","expired"].includes(p.status)?`<button class="text-btn" data-lost="${p.id}">✖ Perdida</button>`:"";
   const items=todayItems();
   $("#todayCount").textContent=items.length||"";
-  $("#todayList").innerHTML=items.map(({p,reason})=>`<div class="proposal-item"><div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${heat(p)} · ${reason}</span></div><div>${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>${improveBtn(p)}`:followBtn(p)+paidBtn(p)+improveBtn(p)+lostBtn(p)}<button class="text-btn" data-open="${p.id}">Abrir</button></div></div>`).join("")||'<p style="color:#64748b">🎉 Todo al día: no hay propuestas para seguir hoy.</p>';
+  $("#todayList").innerHTML=items.map(({p,reason})=>`<div class="proposal-item"><div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${heat(p)} · ${reason}</span></div><div>${unlockBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>${improveBtn(p)}`:followBtn(p)+paidBtn(p)+improveBtn(p)+lostBtn(p)}<button class="text-btn" data-open="${p.id}">Abrir</button></div></div>`).join("")||'<p style="color:#64748b">🎉 Todo al día: no hay propuestas para seguir hoy.</p>';
   $("#hotList").innerHTML=proposals.slice(0,5).map(p=>`
     <div class="proposal-item">
       <div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${p.views||0} vistas</span></div>
@@ -789,11 +791,11 @@ function renderDashboard(){
 
   $("#activityList").innerHTML=(state.activity||[]).slice(0,6).map(a=>`<div class="activity"><b>${a.icon}</b><div>${escapeHtml(a.text)}<br><span style="color:#94a3b8">${escapeHtml(a.time)}</span></div></div>`).join("");
   $("#proposalTable").innerHTML=proposals.map(p=>`
-    <tr><td><strong>${escapeHtml(p.client.name)}</strong><br><small>${escapeHtml(p.title)}</small></td>
+    <tr><td><strong>${escapeHtml(p.client.name)}</strong><br><small>${escapeHtml(p.title)}${p.versionNo>1?` · <b>v${p.versionNo}</b>`:""}</small></td>
     <td>${money(finalPrice(chosenOf(p)))}</td>
-    <td><span class="badge ${p.status}">${statusLabel(p.status)}</span><br><small>${heat(p)}${engBadge(p)}</small></td>
+    <td><span class="badge ${p.status}">${statusLabel(p.status)}</span><br><small>${heat(p)}${engBadge(p)}</small>${stageTag(p)}${nextStepMarkup(p)}</td>
     <td>${p.views||0}</td><td>${relativeTime(p.createdAt)}</td>
-    <td class="actions">${followBtn(p)}${paidBtn(p)}${improveBtn(p)}${lostBtn(p)}${reviewBtn(p)}${refAskBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">📊 Atención</button></td></tr>`).join("");
+    <td class="actions">${unlockBtn(p)}${followBtn(p)}${paidBtn(p)}${improveBtn(p)}${lostBtn(p)}${reviewBtn(p)}${refAskBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">📊 Atención</button></td></tr>`).join("");
   $("#clientsGrid").innerHTML=(state.clients||[]).map(c=>`<div class="client"><h3>${escapeHtml(c.name)}</h3><p>${escapeHtml(c.phone)}</p><p>${c.proposals||0} propuesta(s)</p></div>`).join("");
   renderPerformance(); renderReferrals();
   $$("[data-open]").forEach(b=>b.addEventListener("click",()=>openPublic(b.dataset.open,true)));
@@ -812,6 +814,8 @@ function todayItems(){
   const now=Date.now(), out=[];
   const hTxt=h=>h<48?`${Math.floor(h)} h`:`${Math.floor(h/24)} días`;
   state.proposals.forEach(p=>{
+    const fn=p.follow&&p.follow.next;
+    if(fn&&fn.date&&fn.date<=isoDate(now)&&p.status!=="lost"&&!(p.status==="accepted"&&p.depositPaidAt)){out.push({p,reason:`📌 Seguimiento programado${fn.note?`: ${escapeHtml(fn.note)}`:""}.`,prio:0});return;}
     if(p.status==="accepted"&&p.proofSentAt&&!p.depositPaidAt){out.push({p,reason:"💸 Avisó que transfirió: verificá y confirmá la seña.",prio:0});return;}
     if(p.remindAt&&p.remindAt<=now&&["sent","viewed"].includes(p.status)){out.push({p,reason:"⏰ Pidió que lo contactes hoy.",prio:0});return;}
     if(p.status==="accepted"&&!p.depositPaidAt&&!p.proofSentAt&&p.payExitAt&&now-p.payExitAt>=20*6e4){out.push({p,reason:"👋 Abrió la pantalla de pago y se fue: ofrecele ayuda con la transferencia.",prio:0});return;}
@@ -842,7 +846,7 @@ function duplicateProposal(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
   openBuilder();
   $("#clientName").value=p.client.name===NO_NAME?"":p.client.name; $("#clientPhone").value=p.client.phone;
-  $("#proposalTitle").value=p.title; $("#includes").value=(p.includes||[]).join("\n"); $("#conditions").value=p.conditions||"";
+  $("#proposalTitle").value=p.title; $("#includes").value=(p.includes||[]).join("\n"); $("#conditions").value=p.conditions||""; $("#excludes").value=(p.excludes||[]).join("\n"); $("#deliveryTime").value=p.deliveryTime||"";
   $("#cashDiscount").value=p.cashDiscount||0; $("#depositPct").value=p.depositPct||0;
   $("#bonusText").value=p.bonusText||""; $("#bonusHours").value=p.bonusHours||48; $("#slotsLeft").value=p.slotsLeft??""; $("#slotsLabel").value=p.slotsLabel||""; $("#holdHours").value=p.holdHours||"";
   $$('input[name="pay"]').forEach(x=>x.checked=(p.payments||[]).includes(x.value));
@@ -937,6 +941,7 @@ function startTracker(p){
     else if(el.tagName==="SUMMARY"&&el.closest(".terms-box")) key="Abre las condiciones antes de aceptar";
     else if(el.id==="publicWhatsapp") key="Toca WhatsApp";
     else if(el.id==="doubtBtn") key="Abre «Tengo una duda»";
+    else if(el.id==="publicWhatsapp") key="Consulta por WhatsApp (antes de decidir)";
     else if(el.dataset.doubt) key="Duda: "+el.dataset.doubt;
     else if(el.tagName==="SUMMARY"&&el.closest(".faq-item")) key="Abre pregunta: "+el.textContent.trim().slice(0,40);
     else if(el.tagName==="SUMMARY"){const c=el.closest("[data-choice]");key="Abre términos"+(c?" de "+optName(c.dataset.choice):"");}
@@ -1253,7 +1258,7 @@ async function openReviewLink(token){
 }
 /* Perdida con motivo y recontacto */
 const LOST_REASONS=["Precio","Eligió a otro","No responde","Postergó","Otro"];
-function openTool(html){$("#toolContent").innerHTML=html;openModal("toolModal");}
+function openTool(html){$("#toolModal").classList.remove("wide");$("#toolContent").innerHTML=html;openModal("toolModal");}
 function openLost(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
   openTool(`<h3>¿Qué pasó con ${escapeHtml(p.client.name)}?</h3><p class="tool-sub">Guardar el motivo te muestra qué mejorar.</p>
@@ -1286,7 +1291,7 @@ function openHistory(id){
   if(p.depositPaidAt) ev.push({t:t(p.depositPaidAt),i:"💰",x:"Seña cobrada"});
   if(p.status==="lost") ev.push({t:Date.now(),i:"📉",x:`Perdida: ${p.lostReason||"sin motivo"}${p.recontactAt?` · retomar ${relativeTime(new Date(p.recontactAt).toISOString())}`:""}`});
   ev.sort((a,b)=>a.t-b.t);
-  openTool(`<h3>Historial · ${escapeHtml(p.client.name)}</h3><p class="tool-sub">${escapeHtml(p.title)} · ${heat(p)}</p><ol class="timeline">${ev.map(e=>`<li><b>${e.i}</b><div>${escapeHtml(e.x)}${e.t>864e5?`<small>${relativeTime(new Date(e.t).toISOString())}</small>`:""}</div></li>`).join("")}</ol><h3 class="eng-title">Atención del cliente</h3><div id="engBox"><p class="tool-sub">Cargando análisis…</p></div><div class="tool-actions"><button class="btn btn-ghost" data-tool-close>Cerrar</button></div>`);
+  openTool(`<h3>Historial · ${escapeHtml(p.client.name)}</h3><p class="tool-sub">${escapeHtml(p.title)} · ${heat(p)}</p><p>${unlockBtn(p)}</p><ol class="timeline">${ev.map(e=>`<li><b>${e.i}</b><div>${escapeHtml(e.x)}${e.t>864e5?`<small>${relativeTime(new Date(e.t).toISOString())}</small>`:""}</div></li>`).join("")}</ol><h3 class="eng-title">Atención del cliente</h3><div id="engBox"><p class="tool-sub">Cargando análisis…</p></div><div class="tool-actions"><button class="btn btn-ghost" data-tool-close>Cerrar</button></div>`);
   fillEngagement(p);
 }
 /* Métricas de seguimiento dentro de Performance */
@@ -1660,7 +1665,7 @@ function dayWord(ms){
   return (diff===0?"hoy":diff===1?"mañana":d.toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}))+" "+t;
 }
 // Texto del botón: dice qué paga y qué obtiene.
-function ctaLabel(p,o){const dep=depositOf(p,o); return dep>0?`Reservar mi lugar con ${money(dep)}`:`Aceptar · ${money(finalPrice(o))}`;}
+function ctaLabel(p,o){return "Quiero avanzar";}
 function sumTexts(p,o){
   const fin=finalPrice(o), dep=depositOf(p,o), multi=p.options.length>1;
   const head=`<span class="sum-lab">Tu propuesta${multi?` · ${escapeHtml(o.name)}`:""}:</span> <b>${money(fin)}</b>${dep>0?` <span class="sum-lab sum-res">Reservás con</span> <b>${money(dep)}</b>`:""}`;
@@ -2570,3 +2575,448 @@ document.addEventListener("change",e=>{
   const id=s.closest("[data-ref]").dataset.ref, r=getRefs().find(x=>x.id===id); if(!r) return;
   updateReferral(id,{status:s.value,...(s.value==="won"&&r.reward==="none"?{reward:"pending"}:{})});
 });
+
+/* ===== v39: Destrabar venta · seguimiento comercial · alternativas · siguiente paso ===== */
+/* Todo se guarda en p.follow (motivo con su origen, resultado registrado, próximo seguimiento e historial).
+   Nada cambia el estado real de la propuesta (enviada, aceptada, seña cobrada) por copiar un mensaje o abrir WhatsApp. */
+var builderAltOf=null, _dv=null; const _savingFollow=new Set();
+const FOLLOW_REASONS=[
+  {id:"price",icon:"💸",title:"El precio es demasiado alto",desc:"Le parece caro o fuera de su presupuesto."},
+  {id:"payment",icon:"💳",title:"Necesita otra forma de pago",desc:"Cuotas, una seña menor u otro medio."},
+  {id:"includes",icon:"🔎",title:"Tiene dudas sobre lo que incluye",desc:"No le queda claro el alcance o las condiciones."},
+  {id:"unsure",icon:"🤔",title:"No está seguro de avanzar",desc:"Tiene dudas, pero no dijo cuáles."},
+  {id:"not_now",icon:"⏳",title:"Todavía no es el momento",desc:"Prefiere esperar o decidir más adelante."},
+  {id:"comparing",icon:"⚖️",title:"Está comparando con otras opciones",desc:"Está mirando otras propuestas."},
+  {id:"no_response",icon:"🔕",title:"No responde a los mensajes",desc:"Silencio después de enviarle o escribirle."},
+  {id:"other",icon:"💬",title:"Otro motivo",desc:"Algo distinto a lo anterior."}];
+const FOLLOW_SOURCES={client_declared:"Lo dijo el cliente",seller_assumption:"Es una suposición mía",pending:"Pendiente de confirmar"};
+const FOLLOW_STAGES=[["pending_contact","Pendiente de contacto"],["message_sent","Mensaje enviado"],["client_replied","Cliente respondió"],["changes_requested","Solicitó cambios"],["revised_sent","Propuesta revisada y enviada"],["accepted","Aceptada"],["deposit_pending","Seña pendiente"],["confirmed","Venta confirmada"],["lost","Perdida"],["paused","Pausada para más adelante"]];
+const DOUBT_MAP={"Precio":"price","Forma de pago":"payment","Plazo o fecha":"other","Otra consulta":"other"};
+const reasonOf=id=>FOLLOW_REASONS.find(r=>r.id===id);
+const isMissing=e=>!!e&&(e.code==="PGRST202"||/could not find the function/i.test(e.message||""));
+
+function getFollow(p){
+  if(!p.follow||typeof p.follow!=="object") p.follow={};
+  if(!Array.isArray(p.follow.history)) p.follow.history=[];
+  return p.follow;
+}
+function logFollow(p,type,text){
+  const f=getFollow(p); f.history.push({at:new Date().toISOString(),type,text:String(text).slice(0,240)});
+  if(f.history.length>80) f.history=f.history.slice(-80);
+}
+// Guarda el seguimiento. Si falla, avisa y deja marcado «sin guardar» (no se pierde en silencio dentro de la sesión).
+async function saveFollow(p){
+  const f=getFollow(p); f.updatedAt=new Date().toISOString();
+  if(!Cloud.on){saveState(); return true;}
+  if(_savingFollow.has(p.id)) return false;
+  _savingFollow.add(p.id);
+  try{
+    const clean={}; Object.keys(f).filter(k=>k[0]!=="_").forEach(k=>{clean[k]=f[k];});
+    await Cloud.rpc("save_proposal_follow",{p_id:p.id,p:clean}); f._unsaved=false; return true;
+  }catch(e){
+    f._unsaved=true;
+    toast(isMissing(e)?"Falta ejecutar supabase_v9_destrabar.sql: el seguimiento no se guardó en la nube.":"No se pudo guardar el seguimiento. Revisá tu conexión y tocá «Reintentar».");
+    return false;
+  }finally{_savingFollow.delete(p.id);}
+}
+// Teléfono para WhatsApp: se asume Argentina (+54 9) cuando el número viene sin código de país.
+function waPhone(raw){
+  let d=String(raw||"").replace(/\D/g,""); if(d.startsWith("00")) d=d.slice(2);
+  if(d.length===10) d="549"+d; else if(d.length===11&&d.startsWith("0")) d="549"+d.slice(1);
+  return d.length>=10&&d.length<=15?d:"";
+}
+
+/* ---- estado comercial y siguiente paso ---- */
+function stageInfo(p){
+  if(p.status==="accepted") return {label:p.depositPaidAt?"Seña recibida":p.proofSentAt?"Avisó que transfirió":p.depositPct>0?"Aceptada · seña pendiente":"Aceptada"};
+  if(p.status==="lost") return {label:"Perdida"};
+  const st=p.follow&&p.follow.stage, row=st&&FOLLOW_STAGES.find(x=>x[0]===st);
+  if(row) return {label:row[1],registered:true};
+  if(p.status==="expired") return {label:"Vencida · sin respuesta"};
+  return {label:p.status==="viewed"?"Vista · sin respuesta":"Sin respuesta"};
+}
+function nextStep(p){
+  const f=p.follow||{}, now=Date.now(), today=isoDate(now);
+  if(p.status==="lost"){return p.recontactAt&&p.recontactAt<=now?{id:"retake",label:"Retomar la conversación",why:"Llegó la fecha que te propusiste para retomarla.",btn:"Retomar",act:"follow"}:null;}
+  if(p.status==="accepted"){
+    if(p.depositPaidAt) return {id:"close",label:"Cerrar la oportunidad",why:"La seña está cobrada: registrá el resultado y pedí la opinión.",btn:"Registrar resultado",act:"result"};
+    if(p.depositPct>0) return p.proofSentAt?{id:"verify",label:"Reserva pendiente: verificá la transferencia",why:"Avisó que transfirió. Confirmá la seña cuando la veas en tu cuenta.",btn:"Confirmar seña",act:"paid"}
+      :{id:"deposit",label:"Reserva pendiente: mandale cómo pagar",why:"Aceptó, pero todavía no hay seña.",btn:"Enviar instrucciones",act:"follow"};
+    return {id:"accepted",label:"Explicale cómo continúa",why:"Aceptó la propuesta: confirmale los próximos pasos.",btn:"Escribirle",act:"follow"};
+  }
+  if(f.next&&f.next.date&&f.next.date<=today) return {id:"scheduled",label:"Seguimiento programado",why:f.next.note||"Llegó la fecha que programaste.",btn:"Destrabar venta",act:"unlock"};
+  if(f.stage==="changes_requested") return {id:"alt",label:"Preparar la nueva versión",why:"El cliente pidió cambios.",btn:"Preparar alternativa",act:"alt"};
+  if(p.status==="expired") return {id:"renew",label:"Renovar y retomar",why:"La propuesta venció.",btn:"Renovar",act:"renew"};
+  if(p.doubts&&!p.lastFollowUpAt) return {id:"doubt",label:"Responder la duda",why:`El cliente consultó${p.lastDoubt?`: ${p.lastDoubt}`:""} y no recibió respuesta.`,btn:"Destrabar venta",act:"unlock"};
+  const last=Math.max(new Date(p.lastViewedAt||p.createdAt).getTime()||0,p.lastFollowUpAt||0), h=(now-last)/36e5;
+  if(h>=48) return {id:"followup",label:"Seguimiento prudente",why:`Pasaron ${Math.floor(h/24)} días sin novedades.`,btn:"Destrabar venta",act:"unlock"};
+  return null;
+}
+const unlockBtn=p=>`<button type="button" class="unlock-btn" data-unlock="${escapeHtml(p.id)}">🔓 Destrabar venta</button>`;
+function nextStepMarkup(p){
+  const ns=nextStep(p); if(!ns) return "";
+  return `<div class="next-step"><button type="button" class="text-btn" data-next="${escapeHtml(p.id)}|${ns.act}" title="${escapeHtml(ns.why)}">➜ ${escapeHtml(ns.label)}</button></div>`;
+}
+function stageTag(p){const s=stageInfo(p); return s.registered?`<br><small class="stage-tag">Seguimiento: ${escapeHtml(s.label)}</small>`:"";}
+function runNext(id,act){
+  if(act==="unlock") return openDestrabar(id);
+  if(act==="result") return openDestrabar(id,{open:"dvRes"});
+  if(act==="alt") return prepareAlternative(id,"copy");
+  if(act==="renew") return renewProposal(id);
+  if(act==="follow") return followUp(id);
+  if(act==="paid") return markPaid(id);
+}
+
+/* ---- mensajes personalizados (solo datos reales; no se inventan ofertas, descuentos ni condiciones) ---- */
+function stuckContext(p){
+  const o=chosenOf(p), first=firstName(p.client.name)||"", cheapest=[...p.options].sort((a,b)=>finalPrice(a)-finalPrice(b))[0];
+  const insts=Math.max(0,...p.options.filter(x=>x.hasInstallments&&x.installments>1).map(x=>x.installments));
+  const methods=(p.payments||[]).map(k=>PAY[k]).filter(Boolean);
+  return {o,first,cheapest,insts,methods,multi:p.options.length>1,total:money(finalPrice(o)),fu:p.followUps||0};
+}
+function stuckMessage(p,reasonId,opts){
+  const c=stuckContext(p), g=c.first?`Hola, ${c.first}.`:"Hola.", t=`la propuesta “${p.title}”`;
+  const vence=(p.status!=="expired"&&daysLeft(p)>=0&&daysLeft(p)<=3)?` Te aviso que está vigente hasta el ${fmtDate(p.expiresAt)}.`:"";
+  const venc=p.status==="expired"?" Como venció, puedo actualizarla para que la retomemos.":"";
+  const ago=p.lastFollowUpAt?Math.max(1,Math.round((Date.now()-p.lastFollowUpAt)/864e5)):0;
+  let m;
+  switch(reasonId){
+    case "price":
+      m=`${g} Quería saber si pudiste revisar ${t}. Si el importe de ${c.total} no se ajusta a lo que tenías previsto, podemos evaluar una alternativa con un alcance diferente y mantener claras las condiciones.${c.multi&&c.cheapest&&c.cheapest.id!==c.o.id?` Por ejemplo, la propuesta también incluye la opción ${c.cheapest.name} (${money(finalPrice(c.cheapest))}).`:""} ¿Te parece que la prepare?`; break;
+    case "payment":{
+      const bits=[]; if(c.methods.length) bits.push(c.methods.join(", "));
+      if(c.insts>1) bits.push(`hasta ${c.insts} cuotas`); if(p.depositPct>0) bits.push(`reserva con una seña de ${money(depositOf(p,c.o))}`);
+      m=`${g} Quería saber si pudiste revisar ${t}. Podemos repasar las modalidades de pago${bits.length?` (hoy contempla: ${bits.join("; ")})`:" disponibles"} para ver cuál se adapta mejor a tus posibilidades. ¿Te gustaría que las revisemos?`; break;}
+    case "includes":
+      m=`${g} ¿Cómo estás? Quería saber si te quedó alguna duda sobre ${t}, lo que incluye o las condiciones. Estoy a disposición para aclarártela y ayudarte a evaluar la mejor opción.`; break;
+    case "unsure":
+      m=`${g} Quería saber cómo venís con ${t}. Si hay algo que te genera dudas o querés revisar algún punto antes de decidir, lo vemos juntos sin apuro. ¿Qué es lo que más te gustaría aclarar?`; break;
+    case "not_now":
+      m=`${g} Quería saber cómo venís con ${t}. Entiendo que quizá no sea el momento indicado. Si te parece, podemos retomar el tema más adelante, cuando te resulte conveniente.${vence}`; break;
+    case "comparing":
+      m=`${g} Quería saber si pudiste evaluar ${t}. Si estás comparando alternativas, podemos revisar juntos qué incluye cada opción para que tengas claras las diferencias antes de decidir.`; break;
+    case "no_response":
+      m=c.fu>=2?`${g} Te escribo una última vez por ${t}, para no ser insistente. Si en algún momento querés retomarla, avisame y la actualizamos. ¡Gracias por tu tiempo!`
+        :`${g} ¿Cómo estás? Te escribo para saber si pudiste revisar ${t} que te envié${ago?` (te escribí hace ${ago} ${ago===1?"día":"días"})`:""}. Si te quedó alguna duda o necesitás ajustar algo, avisame y lo vemos.`; break;
+    default:
+      m=`${g} Quería saber si pudiste revisar ${t}. Si hay algo puntual que te esté frenando, contame y vemos cómo resolverlo.`;
+  }
+  if(reasonId!=="no_response"||c.fu<2) m+=venc;
+  if(opts&&opts.link) m+=`\n\n${shareLink(p)}`;
+  return m;
+}
+function stuckReco(p,id){
+  const c=stuckContext(p);
+  const R={
+    price:{t:"Antes de bajar el precio, ofrecé una alternativa con otro alcance: así cuidás tu margen y le das una salida. La original queda intacta.",b:[["alt","🧩 Preparar alternativa"]]},
+    payment:{t:`Revisá qué podés ofrecer de verdad: ${c.insts>1?"ya hay cuotas cargadas; ":""}podés sumar cuotas o bajar la seña con «Mejorar oferta».`,b:[["improve","✨ Mejorar oferta (cuotas / seña)"]]},
+    includes:{t:"Respondé punto por punto qué incluye y qué no. Si el cliente lo pidió, agregá ese detalle a la propuesta para que no vuelva a surgir.",b:[]},
+    unsure:{t:"No empujes la seña: preguntale qué punto lo frena y ofrecele una llamada corta. Registrá su respuesta como «lo dijo el cliente».",b:[["schedule","📌 Programar seguimiento"]]},
+    not_now:{t:"Acordá una fecha para retomar y dejala programada: respetás su tiempo y no perdés la oportunidad.",b:[["schedule","📌 Programar seguimiento"]]},
+    comparing:{t:"Ayudalo a comparar con criterios (alcance, plazos, garantía), no solo por precio. Si tenés una ventaja real, nombrala.",b:[]},
+    no_response:{t:c.fu>=2?"Ya le escribiste varias veces: mandá un cierre amable y dejá la propuesta disponible. Evitá insistir a diario.":"Espaciá los mensajes y probá otro canal si lo tenés (llamada). Un recordatorio breve rinde más que varios seguidos.",b:[["schedule","📌 Programar seguimiento"]]},
+    other:{t:"Preguntale directamente qué lo frena y registrá lo que conteste para dejar claro su origen.",b:[]}};
+  return R[id]||R.other;
+}
+
+/* ---- ventana «Destrabar venta» ---- */
+const dvP=()=>_dv&&state.proposals.find(x=>x.id===_dv.id);
+const dvSuggested=(p,id)=>p.lastDoubt&&DOUBT_MAP[p.lastDoubt]===id?"client_declared":"seller_assumption";
+function openDestrabar(id,opts){
+  const p=state.proposals.find(x=>x.id===id); if(!p) return toast("No encontré esa propuesta.");
+  opts=opts||{}; const cur=getFollow(p).reason;
+  _dv={id,reason:cur?cur.id:"",source:cur?cur.source:"seller_assumption",msg:"",edited:false,link:true};
+  openTool(`<div class="dv" id="dvRoot" role="region" aria-label="Destrabar venta"></div>`);
+  $("#toolModal").classList.add("wide");
+  const root=$("#dvRoot");
+  root.innerHTML=`<header class="dv-top"><div><span class="eyebrow">DESTRABAR VENTA</span><h3 id="dvTitle"></h3><p class="dv-sub" id="dvSub"></p></div><span class="dv-stage" id="dvStage"></span></header>
+    <div id="dvWarn"></div>
+    <section class="dv-sec" aria-label="Datos de la oportunidad"><div id="dvOpp"></div></section>
+    <section class="dv-sec"><h4 id="dvH2">¿Qué está frenando esta venta?</h4><div class="dv-reasons" id="dvReasons" role="radiogroup" aria-labelledby="dvH2"></div><div id="dvSrc"></div></section>
+    <div id="dvAct" hidden></div>
+    <details class="dv-acc" id="dvAlt"><summary>🧩 Preparar una alternativa</summary><div class="dv-accbody" id="dvAltBody"></div></details>
+    <details class="dv-acc" id="dvNext"><summary>📌 Programar seguimiento</summary><div class="dv-accbody" id="dvNextBody"></div></details>
+    <details class="dv-acc" id="dvRes"><summary>🏁 Registrar resultado</summary><div class="dv-accbody" id="dvResBody"></div></details>
+    <details class="dv-acc" id="dvHist"><summary>🕘 Historial y versiones</summary><div class="dv-accbody" id="dvHistBody"></div></details>`;
+  dvBind(root); dvPaintAll();
+  if(opts.open&&$("#"+opts.open)) $("#"+opts.open).open=true;
+  const first=root.querySelector(".dv-reason"); if(first) try{first.focus({preventScroll:true});}catch(e){}
+}
+function dvPaintAll(){dvPaintTop(); dvPaintOpp(); dvPaintReasons(); dvPaintAct(); dvPaintAlt(); dvPaintNext(); dvPaintRes(); dvPaintHist(); dvPaintWarn();}
+function dvPaintTop(){
+  const p=dvP(); if(!p) return; const e=escapeHtml;
+  $("#dvTitle").textContent=`Presupuesto de ${fullName(p.client.name)||"cliente sin nombre"}`;
+  $("#dvSub").textContent=p.title; $("#dvStage").textContent=stageInfo(p).label;
+}
+function dvPaintWarn(){
+  const p=dvP(), box=$("#dvWarn"); if(!box||!p) return;
+  box.innerHTML=getFollow(p)._unsaved?`<div class="dv-alert" role="alert">⚠️ Hay cambios sin guardar en la nube. <button type="button" class="text-btn" id="dvRetry">Reintentar</button></div>`:"";
+}
+function dvLastActivity(p){
+  const f=getFollow(p), c=[[p.lastViewedAt,"El cliente abrió la propuesta"],[p.lastFollowUpAt,"Último seguimiento enviado"],[p.acceptedAt,"El cliente aceptó"]];
+  const h=f.history[f.history.length-1]; if(h) c.push([h.at,h.text]);
+  const best=c.map(([t,l])=>[t?new Date(t).getTime():0,l]).filter(x=>x[0]>0).sort((a,b)=>b[0]-a[0])[0];
+  return best?`${relativeTime(new Date(best[0]).toISOString())} · ${best[1]}`:"Sin actividad registrada";
+}
+function dvPaintOpp(){
+  const p=dvP(); if(!p) return; const e=escapeHtml, o=chosenOf(p), multi=p.options.length>1;
+  const sub=multi?(p.chosenOption?`Opción elegida: ${o.name}`:`Opción recomendada: ${o.name} (hay ${p.options.length} opciones)`):"";
+  const acts=[]; if(p.followUps) acts.push(`${p.followUps} seguimiento${p.followUps>1?"s":""} enviado${p.followUps>1?"s":""}`);
+  const hist=getFollow(p).history; const cp=hist.filter(h=>h.type==="copied").length, wa=hist.filter(h=>h.type==="whatsapp").length;
+  if(cp) acts.push(`${cp} mensaje${cp>1?"s":""} copiado${cp>1?"s":""}`); if(wa) acts.push(`WhatsApp abierto ${wa} ${wa>1?"veces":"vez"}`);
+  const ns=nextStep(p);
+  $("#dvOpp").innerHTML=`<dl class="dv-facts"><div><dt>Importe</dt><dd>${money(finalPrice(o))}</dd>${sub?`<small>${e(sub)}</small>`:""}</div>
+    <div><dt>Estado</dt><dd>${e(stageInfo(p).label)}</dd></div><div><dt>Creada</dt><dd>${p.createdAt?relativeTime(p.createdAt):"—"}</dd></div>
+    <div><dt>Última actividad</dt><dd class="dv-small">${e(dvLastActivity(p))}</dd></div></dl>
+    <p class="dv-acts">${acts.length?`Acciones registradas: ${e(acts.join(" · "))}.`:"Todavía no registraste acciones sobre esta propuesta."}</p>
+    ${ns?`<div class="dv-next"><span>Siguiente paso recomendado:</span> <b>${e(ns.label)}</b><small>${e(ns.why)}</small>${ns.act!=="unlock"?`<button type="button" class="btn btn-secondary btn-sm" data-dv-run="${ns.act}">${e(ns.btn)}</button>`:""}</div>`:""}`;
+}
+function dvPaintReasons(){
+  const p=dvP(); if(!p) return; const e=escapeHtml;
+  $("#dvReasons").innerHTML=FOLLOW_REASONS.map(r=>`<button type="button" class="dv-reason${_dv.reason===r.id?" on":""}" role="radio" aria-checked="${_dv.reason===r.id}" data-dv-reason="${r.id}"><span class="dv-ic" aria-hidden="true">${r.icon}</span><span><b>${e(r.title)}</b><small>${e(r.desc)}</small></span></button>`).join("");
+  const sug=p.lastDoubt&&DOUBT_MAP[p.lastDoubt]&&_dv.reason!==DOUBT_MAP[p.lastDoubt]?`<p class="dv-hint">El cliente tocó «${e(p.lastDoubt)}» en la propuesta. <button type="button" class="text-btn" data-dv-reason="${DOUBT_MAP[p.lastDoubt]}" data-dv-declared="1">Usar ese motivo como declarado</button></p>`:"";
+  $("#dvSrc").innerHTML=_dv.reason?`<label class="dv-src">¿Cómo lo sabés?<select id="dvSource">${Object.entries(FOLLOW_SOURCES).map(([k,v])=>`<option value="${k}"${k===_dv.source?" selected":""}>${e(v)}</option>`).join("")}</select></label><p class="dv-hint">Queda guardado para no confundir lo que dijo el cliente con lo que suponés.</p>${sug}`:`<p class="dv-hint">Elegí un motivo (uno solo; podés cambiarlo cuando quieras).</p>${sug}`;
+}
+function dvPaintAct(){
+  const p=dvP(), box=$("#dvAct"); if(!p||!_dv.reason){if(box) box.hidden=true; return;}
+  const e=escapeHtml, reco=stuckReco(p,_dv.reason), first=firstName(p.client.name);
+  if(!_dv.edited) _dv.msg=stuckMessage(p,_dv.reason,{link:_dv.link});
+  box.hidden=false;
+  box.innerHTML=`<section class="dv-sec"><h4>Qué te conviene hacer</h4><p class="dv-reco">${e(reco.t)}</p>${reco.b.length?`<div class="dv-btns">${reco.b.map(([a,l])=>`<button type="button" class="btn btn-secondary btn-sm" data-dv-act="${a}">${e(l)}</button>`).join("")}</div>`:""}</section>
+    <section class="dv-sec"><h4>Mensaje${first?` para ${e(first)}`:""}</h4>
+      <label class="check-row dv-link"><input type="checkbox" id="dvLink"${_dv.link?" checked":""}><span>Incluir el link de la propuesta</span></label>
+      <label class="sr-only" for="dvMsg">Mensaje para el cliente</label>
+      <textarea id="dvMsg" rows="7" maxlength="1200">${e(_dv.msg)}</textarea>
+      <div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" id="dvEdit">✏️ Editar mensaje</button><button type="button" class="btn btn-secondary btn-sm" id="dvCopy">📋 Copiar mensaje</button><button type="button" class="btn btn-primary btn-sm" id="dvWa">💬 Abrir WhatsApp</button><button type="button" class="btn btn-secondary btn-sm" data-dv-act="alt">🧩 Preparar alternativa</button></div>
+      <button type="button" class="text-btn" id="dvReset"${_dv.edited?"":" hidden"}>↺ Volver al mensaje sugerido</button>
+      <div id="dvPhone"></div>
+      <p class="dv-note">No se envía nada automáticamente: revisá el texto y enviálo vos.</p>
+      <div id="dvSentAsk" class="dv-sentask" hidden>¿Ya lo enviaste? <button type="button" class="btn btn-secondary btn-sm" id="dvMarkSent">Sí, registrar como enviado</button></div>
+    </section>`;
+}
+const dvVersions=p=>{const root=p.versionOf||p.id; return state.proposals.filter(x=>(x.versionOf||x.id)===root).sort((a,b)=>(a.versionNo||1)-(b.versionNo||1));};
+function dvPaintAlt(){
+  const p=dvP(); if(!p) return; const multi=p.options.length>1, c=stuckContext(p);
+  $("#dvAltBody").innerHTML=`<p class="dv-hint">Crea una copia para ajustar alcance, precio o condiciones de pago. <b>La propuesta original no se modifica</b> y vos revisás todo antes de enviarla.</p>
+    <div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" data-dv-alt="copy">Copiar la propuesta completa</button>${multi?`<button type="button" class="btn btn-secondary btn-sm" data-dv-alt="cheapest">Solo con la opción más económica (${escapeHtml(c.cheapest.name)})</button>`:""}</div>`;
+}
+function dvPaintNext(){
+  const p=dvP(); if(!p) return; const e=escapeHtml, f=getFollow(p), n=f.next;
+  $("#dvNextBody").innerHTML=`${n&&n.date?`<div class="dv-sched"><b>Programado: ${e(fmtDate(n.date))}</b> · ${e(n.action||"Seguimiento")}${n.note?` · ${e(n.note)}`:""}<div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" id="dvNextDone">Marcar como hecho</button><button type="button" class="text-btn" id="dvNextClear">Quitar</button></div></div>`:""}
+    <form id="dvNextForm" class="dv-form" novalidate><label>Fecha<input type="date" id="dvNextDate" min="${isoDate(Date.now())}" value="${e((n&&n.date)||"")}"></label>
+      <label>Próxima acción<select id="dvNextAct">${["Escribirle por WhatsApp","Llamarlo/a","Enviar una alternativa","Revisar la propuesta","Otra"].map(a=>`<option${n&&n.action===a?" selected":""}>${a}</option>`).join("")}</select></label>
+      <label>Nota<input id="dvNextNote" maxlength="140" placeholder="Ej: me pidió que lo llame el viernes" value="${e((n&&n.note)||"")}"></label>
+      <p class="imp-err" id="dvNextErr" role="alert" hidden></p><button type="submit" class="btn btn-primary btn-sm">Guardar seguimiento</button></form>`;
+}
+function dvPaintRes(){
+  const p=dvP(); if(!p) return; const cur=getFollow(p).stage;
+  $("#dvResBody").innerHTML=`<p class="dv-hint">Registrá en qué quedó. Esto es tu seguimiento: <b>no cambia</b> el estado real de la propuesta salvo «Perdida», que usa el flujo de siempre.</p>
+    <div class="dv-stages">${FOLLOW_STAGES.map(([k,l])=>`<button type="button" class="dv-stage-btn${cur===k?" on":""}" data-dv-stage="${k}" aria-pressed="${cur===k}">${escapeHtml(l)}</button>`).join("")}</div>`;
+}
+function dvPaintHist(){
+  const p=dvP(); if(!p) return; const e=escapeHtml, h=getFollow(p).history.slice().reverse().slice(0,25), vs=dvVersions(p);
+  $("#dvHistBody").innerHTML=`${vs.length>1?`<h5>Versiones</h5><ul class="dv-vers">${vs.map(v=>{const base=finalPrice(chosenOf(vs[0])), cur=finalPrice(chosenOf(v)), d=base?Math.round(100*(cur-base)/base):0;
+      return `<li><b>${(v.versionNo||1)===1?"Original":`Alternativa v${v.versionNo}`}</b> · ${e(v.title)} · ${money(cur)}${v.id!==vs[0].id&&d?` (${d>0?"+":""}${d}% vs. original)`:""} · ${statusLabel(v.status)} <button type="button" class="text-btn" data-dv-ver="${e(v.id)}">Ver</button></li>`;}).join("")}</ul>`:""}
+    <h5>Acciones registradas</h5>${h.length?`<ol class="dv-hist">${h.map(x=>`<li><span>${e(x.text)}</span><small>${relativeTime(x.at)}</small></li>`).join("")}</ol>`:'<p class="dv-hint">Todavía no hay acciones registradas.</p>'}
+    <button type="button" class="text-btn" data-dv-full="${e(p.id)}">Ver actividad completa del cliente</button>`;
+}
+
+/* ---- acciones ---- */
+async function dvSetReason(id,declared){
+  const p=dvP(); if(!p) return;
+  if(_dv.edited&&_dv.msg.trim()&&id!==_dv.reason&&!confirm("Cambiar el motivo reemplaza el mensaje que editaste. ¿Seguir?")) return;
+  const changed=id!==_dv.reason; _dv.reason=id; _dv.edited=false;
+  if(declared) _dv.source="client_declared"; else if(changed) _dv.source=dvSuggested(p,id);
+  const f=getFollow(p); f.reason={id,source:_dv.source,at:new Date().toISOString()};
+  logFollow(p,"reason",`Motivo: ${reasonOf(id).title} (${FOLLOW_SOURCES[_dv.source]}).`);
+  dvPaintReasons(); dvPaintAct(); dvPaintHist(); dvPaintOpp();
+  await saveFollow(p); dvPaintWarn();
+}
+async function dvSetSource(v){
+  const p=dvP(); if(!p||!FOLLOW_SOURCES[v]) return; _dv.source=v; const f=getFollow(p);
+  if(f.reason) f.reason.source=v; logFollow(p,"reason",`Origen del motivo: ${FOLLOW_SOURCES[v]}.`);
+  dvPaintHist(); await saveFollow(p); dvPaintWarn();
+}
+async function dvCopy(){
+  const p=dvP(), t=_dv.msg.trim(); if(!t) return toast("Elegí un motivo para generar el mensaje.");
+  try{await navigator.clipboard.writeText(t); toast("Mensaje copiado ✔");}catch(err){window.prompt("Copiá el mensaje:",t);}
+  logFollow(p,"copied","Mensaje copiado (todavía sin enviar)."); dvPaintHist(); dvPaintOpp(); await saveFollow(p); dvPaintWarn();
+}
+function dvWhatsApp(){
+  const p=dvP(), t=_dv.msg.trim(); if(!t) return toast("Elegí un motivo para generar el mensaje.");
+  const ph=waPhone(p.client.phone);
+  if(!ph){dvPhoneFix(); return;}
+  window.open(`https://wa.me/${ph}?text=${encodeURIComponent(t)}`,"_blank","noopener");
+  logFollow(p,"whatsapp","Abriste WhatsApp con el mensaje (no se confirma que lo hayas enviado)."); $("#dvSentAsk").hidden=false;
+  dvPaintHist(); dvPaintOpp(); saveFollow(p).then(dvPaintWarn);
+}
+function dvPhoneFix(msg){
+  const p=dvP(), e=escapeHtml;
+  $("#dvPhone").innerHTML=`<div class="dv-phone" role="alert"><label>${msg||"Falta un teléfono válido para abrir WhatsApp."}<input id="dvPhoneIn" inputmode="tel" autocomplete="tel" placeholder="Ej: 3511234567" value="${e(p.client.phone||"")}"></label><button type="button" class="btn btn-secondary btn-sm" id="dvSavePhone">Guardar teléfono</button></div>`;
+  $("#dvPhoneIn").focus();
+}
+async function dvSavePhone(){
+  const p=dvP(), v=$("#dvPhoneIn").value.trim();
+  if(!waPhone(v)) return dvPhoneFix("Ese número no parece válido (10 dígitos con código de área, o con código de país).");
+  const prev=p.client.phone; p.client.phone=v;
+  if(Cloud.on){
+    try{ if(!p.client_id) throw new Error("sin cliente"); const sb=await Auth.client(); const {error}=await sb.from("clients").update({phone:v}).eq("id",p.client_id); if(error) throw error; }
+    catch(err){p.client.phone=prev; return dvPhoneFix("No se pudo guardar el teléfono. Revisá tu conexión e intentá de nuevo.");}
+  }else{const c=(state.clients||[]).find(x=>x.phone===prev&&x.name===p.client.name); if(c) c.phone=v; saveState();}
+  $("#dvPhone").innerHTML=""; toast("Teléfono guardado ✔. Tocá «Abrir WhatsApp» de nuevo.");
+}
+async function dvMarkSent(){
+  const p=dvP(); if(!p) return; const btn=$("#dvMarkSent"); if(btn) btn.disabled=true;
+  if(Cloud.on){try{await Cloud.rpc("record_follow_up",{p_id:p.id});}catch(e){if(p.status!=="accepted"&&p.status!=="lost"){if(btn) btn.disabled=false; return toast(e.message||"No se pudo registrar el envío.");}}}
+  p.followUps=(p.followUps||0)+1; p.lastFollowUpAt=Date.now(); p.remindAt=null;
+  const f=getFollow(p); if(!["accepted","confirmed"].includes(f.stage)) f.stage="message_sent";
+  logFollow(p,"sent","Registraste el mensaje como enviado."); state.activity.unshift({icon:"🔔",text:`Seguimiento enviado a ${p.client.name}.`,time:"Ahora"});
+  $("#dvSentAsk").hidden=true; dvPaintTop(); dvPaintOpp(); dvPaintRes(); dvPaintHist();
+  await saveFollow(p); saveState(); renderDashboard(); dvPaintWarn();
+}
+async function dvSaveNext(ev){
+  ev.preventDefault(); const p=dvP(), err=$("#dvNextErr"), date=$("#dvNextDate").value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<isoDate(Date.now())){err.textContent="Elegí una fecha de hoy en adelante."; err.hidden=false; return;}
+  err.hidden=true; const f=getFollow(p);
+  f.next={date,action:$("#dvNextAct").value,note:$("#dvNextNote").value.trim().slice(0,140)};
+  logFollow(p,"scheduled",`Seguimiento programado para el ${fmtDate(date)}: ${f.next.action}${f.next.note?` (${f.next.note})`:""}.`);
+  dvPaintNext(); dvPaintOpp(); dvPaintHist(); await saveFollow(p); renderDashboard(); dvPaintWarn(); toast("Seguimiento programado ✔");
+}
+async function dvNextClose(done){
+  const p=dvP(), f=getFollow(p); if(!f.next) return;
+  logFollow(p,"scheduled",done?"Seguimiento programado marcado como hecho.":"Quitaste el seguimiento programado.");
+  delete f.next; dvPaintNext(); dvPaintOpp(); dvPaintHist(); await saveFollow(p); renderDashboard(); dvPaintWarn();
+}
+async function dvSetStage(k){
+  const p=dvP(); if(!p) return; const row=FOLLOW_STAGES.find(x=>x[0]===k); if(!row) return;
+  if(k==="lost"){closeModal("toolModal"); return openLost(p.id);}
+  if(k==="confirmed"&&p.status!=="accepted"&&!confirm("El cliente todavía no aceptó la propuesta en el link. ¿Registrar igual como venta confirmada por otro medio?")) return;
+  getFollow(p).stage=k; logFollow(p,"stage",`Resultado registrado: ${row[1]}.`);
+  dvPaintTop(); dvPaintOpp(); dvPaintRes(); dvPaintHist(); await saveFollow(p); renderDashboard(); dvPaintWarn();
+}
+function dvBind(root){
+  root.addEventListener("click",ev=>{
+    const T=ev.target.closest?ev.target:null; if(!T) return;
+    const r=T.closest("[data-dv-reason]"); if(r) return dvSetReason(r.dataset.dvReason,!!r.dataset.dvDeclared);
+    if(T.closest("#dvCopy")) return dvCopy();
+    if(T.closest("#dvWa")) return dvWhatsApp();
+    if(T.closest("#dvEdit")){const m=$("#dvMsg"); m.focus(); m.setSelectionRange(m.value.length,m.value.length); return;}
+    if(T.closest("#dvReset")){_dv.edited=false; return dvPaintAct();}
+    if(T.closest("#dvMarkSent")) return dvMarkSent();
+    if(T.closest("#dvSavePhone")) return dvSavePhone();
+    if(T.closest("#dvNextDone")) return dvNextClose(true);
+    if(T.closest("#dvNextClear")) return dvNextClose(false);
+    if(T.closest("#dvRetry")){const p=dvP(); return saveFollow(p).then(()=>dvPaintWarn());}
+    const a=T.closest("[data-dv-act]");
+    if(a){const k=a.dataset.dvAct, p=dvP();
+      if(k==="alt"){$("#dvAlt").open=true; $("#dvAlt").scrollIntoView({block:"nearest"}); return;}
+      if(k==="improve"){closeModal("toolModal"); return openImprove(p.id);}
+      if(k==="schedule"){$("#dvNext").open=true; $("#dvNextDate").focus(); return;}}
+    const alt=T.closest("[data-dv-alt]"); if(alt) return prepareAlternative(_dv.id,alt.dataset.dvAlt);
+    const st=T.closest("[data-dv-stage]"); if(st) return dvSetStage(st.dataset.dvStage);
+    const run=T.closest("[data-dv-run]"); if(run){const id=_dv.id; closeModal("toolModal"); return runNext(id,run.dataset.dvRun);}
+    const ver=T.closest("[data-dv-ver]"); if(ver){const id=ver.dataset.dvVer; closeModal("toolModal"); return openPublic(id,true);}
+    const full=T.closest("[data-dv-full]"); if(full) return openHistory(full.dataset.dvFull);
+  });
+  root.addEventListener("input",ev=>{if(ev.target.id==="dvMsg"){_dv.msg=ev.target.value; _dv.edited=true; const rs=$("#dvReset"); if(rs) rs.hidden=false;}});
+  root.addEventListener("change",ev=>{
+    if(ev.target.id==="dvSource") dvSetSource(ev.target.value);
+    if(ev.target.id==="dvLink"){_dv.link=ev.target.checked; if(_dv.edited) toast("Editaste el mensaje: agregá o quitá el link a mano."); else dvPaintAct();}
+  });
+  root.addEventListener("submit",ev=>{if(ev.target.id==="dvNextForm") dvSaveNext(ev);});
+}
+document.addEventListener("click",e=>{
+  const T=e.target&&e.target.closest?e.target:null; if(!T) return;
+  const u=T.closest("[data-unlock]"); if(u) return openDestrabar(u.dataset.unlock);
+  const n=T.closest("[data-next]"); if(n){const [id,act]=n.dataset.next.split("|"); runNext(id,act);}
+});
+
+/* ---- alternativas (versiones) ---- */
+function prepareAlternative(id,mode){
+  const p=state.proposals.find(x=>x.id===id); if(!p) return;
+  closeModal("toolModal"); duplicateProposal(id);
+  if(!$("#clientName")) return;
+  builderAltOf=id; $("#proposalTitle").value=`${p.title} (alternativa)`;
+  if(mode==="cheapest"&&p.options.length>1){
+    const ch=[...p.options].sort((a,b)=>finalPrice(a)-finalPrice(b))[0], {id:_x,...rest}=ch;
+    builderOptions=[newOption({...rest,recommended:true,_open:true})]; renderOptionEditors();
+  }
+  renderBuilderPreview(); updateAltBanner();
+  toast("Borrador de alternativa: la original no se modifica. Revisá y creala cuando estés conforme.");
+}
+function updateAltBanner(){
+  const form=$("#proposalForm"); if(!form) return; let b=$("#altBanner");
+  if(!builderAltOf){if(b) b.remove(); return;}
+  const orig=state.proposals.find(x=>x.id===builderAltOf); if(!orig){if(b) b.remove(); return;}
+  if(!b){b=document.createElement("div"); b.id="altBanner"; b.className="alt-banner"; b.setAttribute("role","status"); form.prepend(b);}
+  const nOpts=builderOptions.filter(o=>o.name||o.price), cur=nOpts.length?[...nOpts].sort((a,c)=>finalPrice(a)-finalPrice(c))[0]:null;
+  const oTot=finalPrice(chosenOf(orig)), nTot=cur?finalPrice(cur):0, d=oTot?Math.round(100*(nTot-oTot)/oTot):0;
+  const lines=s=>(String(s||"").split("\n").filter(x=>x.trim()).length);
+  b.innerHTML=`<b>🧩 Alternativa de «${escapeHtml(orig.title)}»</b><span>Original: <b>${money(oTot)}</b> · ${orig.options.length} ${orig.options.length===1?"opción":"opciones"} · ${(orig.includes||[]).length} incluido${(orig.includes||[]).length===1?"":"s"}</span><span>Esta alternativa: <b>${cur?money(nTot):"—"}</b> · ${nOpts.length} ${nOpts.length===1?"opción":"opciones"} · ${lines($("#includes")&&$("#includes").value)} incluido${lines($("#includes")&&$("#includes").value)===1?"":"s"}${cur&&oTot?` · <b>${d>0?"+":""}${d}%</b> frente a la original`:""}</span>${cur&&nTot<oTot?"<small>Revisá que el nuevo importe te siga dejando margen: la app no conoce tus costos.</small>":""}`;
+}
+async function linkVersion(pid){
+  const oid=builderAltOf; if(!oid) return; builderAltOf=null;
+  const orig=state.proposals.find(x=>x.id===oid), np=state.proposals.find(x=>x.id===pid); if(!orig||!np) return;
+  const root=orig.versionOf||orig.id, n=Math.max(1,...state.proposals.filter(x=>(x.versionOf||x.id)===root).map(x=>x.versionNo||1))+1;
+  if(Cloud.on){
+    try{const sb=await Auth.client(); const {error}=await sb.from("proposals").update({version_of:root,version_no:n}).eq("id",pid); if(error) throw error;}
+    catch(e){return toast("La alternativa se creó, pero no pude vincularla a la original (¿falta ejecutar supabase_v9_destrabar.sql?).");}
+  }
+  np.versionOf=root; np.versionNo=n;
+  logFollow(orig,"alternative",`Alternativa v${n} preparada por ${money(finalPrice(chosenOf(np)))}.`);
+  await saveFollow(orig); saveState();
+}
+
+/* ---- campos nuevos de la propuesta: «qué no incluye» y plazo ---- */
+async function saveProposalExtra(id,p){
+  if(!Cloud.on||!((p.excludes||[]).length||p.deliveryTime)) return;
+  try{await Cloud.rpc("save_proposal_extra",{p_id:id,p:{excludes:p.excludes||[],deliveryTime:p.deliveryTime||""}});}
+  catch(e){toast(isMissing(e)?"Falta ejecutar supabase_v9_destrabar.sql para guardar «qué no incluye» y el plazo.":"No se pudo guardar «qué no incluye» y el plazo.");}
+}
+
+/* ---- visitas humanas: no se cuentan robots ni vistas previas de mensajería ---- */
+function isBotUA(){
+  const ua=navigator.userAgent||"";
+  return navigator.webdriver===true||/bot\b|crawl|spider|preview|facebookexternalhit|whatsapp\/|slackbot|telegrambot|linkedinbot|headless|lighthouse|pagespeed|curl\/|wget|python-requests|okhttp/i.test(ua);
+}
+function humanOnce(fn){
+  if(isBotUA()) return;
+  let done=false; const evs=["pointerdown","touchstart","keydown","wheel","scroll","mousemove"];
+  const go=()=>{if(done) return; done=true; evs.forEach(x=>window.removeEventListener(x,go,true)); try{fn();}catch(e){}};
+  evs.forEach(x=>window.addEventListener(x,go,{capture:true,passive:true}));
+}
+
+/* ---- vista pública: piezas nuevas ---- */
+const introText=p=>p.options.length>1?`Armé ${p.options.length} opciones para que compares y elijas la que mejor se adapte a lo que necesitás.`:"Acá tenés el detalle de lo que te propongo, para que lo revises con tranquilidad.";
+function contactChip(){
+  const d=normalizePhone(state.business.whatsapp); if(!d) return "";
+  return `<div class="contact-chip">📱 <a href="https://wa.me/${d}" target="_blank" rel="noopener">WhatsApp ${escapeHtml(d)}</a></div>`;
+}
+const acc=(sec,ic,title,body)=>`<details class="acc" data-sec="${sec}"><summary><span aria-hidden="true">${ic}</span>${title}</summary><div class="acc-body">${body}</div></details>`;
+function financeMarkup(p){
+  const rows=p.options.map(o=>{
+    const fin=finalPrice(o), dep=depositOf(p,o), n=o.hasInstallments&&o.installments>1?o.installments:0, bits=[`Total <b>${money(fin)}</b>`];
+    if(p.depositPct>0) bits.push(`Seña inicial <b>${money(dep)}</b> (${p.depositPct}%)`,`Saldo <b>${money(fin-dep)}</b>`);
+    if(n) bits.push(`o en <b>${n} cuotas de ${money(fin/n)}</b> (total ${money(fin)})`);
+    return `<li>${p.options.length>1?`<b>${escapeHtml(o.name)}:</b> `:""}${bits.join(" · ")}</li>`;}).join("");
+  return `${payBlock(p)}<ul class="fin-list">${rows}</ul>`;
+}
+function detailsMarkup(p){
+  const e=escapeHtml, inc=(p.includes||[]).filter(Boolean), exc=(p.excludes||[]).filter(Boolean), out=[];
+  if(inc.length||exc.length||p.deliveryTime) out.push(acc("incluye","✓","Qué incluye y qué no incluye",`${inc.map(x=>`<div class="include">✓ ${e(x)}</div>`).join("")}${exc.map(x=>`<div class="include no">✗ ${e(x)}</div>`).join("")}${p.deliveryTime?`<p class="plazo">⏱ <b>Plazo:</b> ${e(p.deliveryTime)}</p>`:""}`));
+  out.push(acc("pago","💳","Cómo se paga",financeMarkup(p)));
+  if((p.conditions||"").trim()) out.push(acc("condiciones","📄","Condiciones",`<p>${e(p.conditions)}</p>`));
+  return `<div class="acc-group">${out.join("")}</div>${afterMarkup(p)}`;
+}
+function consultMarkup(p){
+  return `<section class="consult" data-sec="consulta"><h4>¿Tenés alguna duda antes de decidir?</h4><p>Podés consultarme sin aceptar nada.</p>
+    <a class="btn btn-secondary consult-wa" id="publicWhatsapp" href="#" target="_blank" rel="noopener">💬 Consultar por WhatsApp</a>
+    <button type="button" class="text-btn" id="doubtBtn">Elegir el tema de mi duda</button>
+    <div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div></section>`;
+}
+function statusTrackMarkup(p,dep,paid){
+  const s=[["Opción seleccionada","done"],["Propuesta aceptada","done"]];
+  if(dep>0){s.push([paid?"Seña confirmada":p.proofSentAt?"Transferencia avisada · en verificación":"Seña pendiente",paid?"done":p.proofSentAt?"wait":"todo"]); s.push(["Reserva confirmada",paid?"done":"todo"]);}
+  else s.push(["Pago a coordinar con el negocio","todo"]);
+  return `<ol class="status-track" aria-label="Estado de tu propuesta">${s.map(([t,k])=>`<li class="${k}"><span aria-hidden="true">${k==="done"?"✔":k==="wait"?"…":"○"}</span>${escapeHtml(t)}</li>`).join("")}</ol>`;
+}
