@@ -252,6 +252,7 @@
               <div class="card-head"><h3>Recomendación automática</h3></div>
               <p id="performanceAdvice" class="advice">Creá y compartí tu primera propuesta para recibir recomendaciones.</p>
             </div>
+            <div class="card" id="recoveryCard"></div>
           </div>
 
           <div id="panel-settings" class="panel">
@@ -274,6 +275,7 @@
               <label>Qué pasa después de reservar (una por línea: Paso | Detalle | Plazo). Poné tus plazos reales<textarea name="afterSteps" rows="4" maxlength="800" placeholder="Reservás con la seña | Te confirmo por WhatsApp | Al instante&#10;Coordinamos | Acordamos fecha y detalles | En 24 h&#10;Entrega o turno | Hacemos el trabajo | Fecha acordada"></textarea></label>
               <h3>Quién te atiende</h3>
               <p class="field-help">Lo ve el cliente en cada propuesta, antes de decidir. Completá solo lo que sea verdad.</p>
+              <label>Tu nombre (quien atiende)<input name="profAdvisor" maxlength="60" placeholder="Ej: Martín"></label>
               <label>Rubro o especialidad<input name="profTrade" maxlength="60" placeholder="Ej: Pintura y reformas"></label>
               <label>Zona donde trabajás<input name="profArea" maxlength="60" placeholder="Ej: Zona norte y alrededores"></label>
               <label>Años de experiencia<input name="profYears" type="number" min="0" max="80" inputmode="numeric"></label>
@@ -314,29 +316,40 @@
       <div class="modal-backdrop" data-close="builder"></div>
       <div class="modal-dialog large">
         <div class="modal-head"><div><span class="eyebrow">NUEVA PROPUESTA</span><h2>Creala en menos de 2 minutos</h2></div><button class="icon-btn" data-close="builder" aria-label="Cerrar">×</button></div>
-        <form id="proposalForm" class="builder">
+        <form id="proposalForm" class="builder" data-step="1" novalidate>
           <div class="builder-col">
-            <section class="form-card">
+            <div class="wiz-head">
+              <ol id="wizSteps" class="wiz-steps" aria-label="Pasos para crear la propuesta"><li data-wstep="1" class="on" aria-current="step"><span>1</span> Cliente</li><li data-wstep="2"><span>2</span> Oferta</li><li data-wstep="3"><span>3</span> Revisar y compartir</li></ol>
+              <p id="wizLabel" class="wiz-label" aria-live="polite">Paso 1 de 3 · Cliente</p>
+              <p id="draftState" class="draft-state" aria-live="polite"></p>
+              <p id="wizErr" class="imp-err" role="alert" hidden></p>
+            </div>
+            <section class="form-card" data-step-only="1">
               <h3>Cliente</h3>
+              <p class="hint">Solo necesitás un medio de contacto. El nombre es opcional.</p>
               <label>Nombre <small>(opcional)</small><input id="clientName" placeholder="Juan Pérez" autocomplete="off"></label>
               <label>WhatsApp<input id="clientPhone" required placeholder="3511234567" inputmode="tel"></label>
+            </section>
+            <section class="form-card" data-step-only="2">
+              <h3>Qué ofrecés</h3>
               <label>Título de la propuesta<input id="proposalTitle" required value="Propuesta de servicio"></label>
               <label>Válida hasta<input id="proposalExpires" type="date" required></label>
               <div class="kind-toggle" role="radiogroup" aria-label="Tipo de propuesta"><span class="option-label">TIPO</span><label class="chk"><input type="radio" name="kind" value="product"> Producto</label><label class="chk"><input type="radio" name="kind" value="service" checked> Servicio</label></div>
             </section>
-            <section class="form-card">
+            <section class="form-card" data-step-only="2">
               <div class="card-head"><h3>Opciones</h3><button type="button" class="btn btn-secondary btn-sm" id="addOption">+ Agregar opción</button></div>
               <p class="hint">Una sola opción alcanza. Lo extra (descuento, cuotas, garantía) es opcional.</p>
               <div id="catalogList" class="catalog"></div>
               <div id="optionsList"></div>
             </section>
+            <details class="adv-box" data-step-only="2"><summary>Personalización avanzada (opcional): pagos, incentivos y audio</summary>
             <section class="form-card">
               <h3>Pago</h3>
               <div class="pay-row"><label class="chk"><input type="checkbox" name="pay" value="cash" checked> Efectivo</label><label class="chk"><input type="checkbox" name="pay" value="transfer" checked> Transferencia</label><label class="chk"><input type="checkbox" name="pay" value="mp" checked> Mercado Pago</label></div>
               <label>Descuento por pago al contado (efectivo / transferencia), en %<input id="cashDiscount" type="number" min="0" max="50" step="any" value="0"></label>
               <label>Seña para reservar, en % del precio (0 = sin seña)<input id="depositPct" type="number" min="0" max="100" step="any" value="30"></label>
             </section>
-            <section class="form-card">
+            <section class="form-card" data-step-only="2">
               <h3>Qué incluye</h3>
               <textarea id="includes" rows="4">Instalación
 Materiales principales
@@ -355,12 +368,16 @@ Soporte inicial</textarea>
               <label>Qué son esos cupos (si queda 1, escribilo en singular)<input id="slotsLabel" maxlength="60" placeholder="Ej: turnos esta semana"></label>
               <label>Retengo el lugar después de que acepta (horas; vacío = no mostrar)<input id="holdHours" type="number" min="1" max="720" inputmode="numeric" placeholder="Ej: 24"></label>
             </section>
+            </details>
+            <div class="wiz-nav" data-step-only="1 2"><button type="button" class="btn btn-ghost" id="wizBack">Atrás</button><button type="button" class="btn btn-primary" id="wizNext">Siguiente</button></div>
           </div>
-          <aside class="builder-preview">
-            <div class="preview-label">VISTA PREVIA</div>
+          <aside class="builder-preview" data-step-only="3">
+            <div class="preview-label">VISTA PREVIA · ASÍ LO VE TU CLIENTE</div>
+            <div class="wiz-fix"><button type="button" class="text-btn" data-wiz-go="1">✏️ Editar cliente</button><button type="button" class="text-btn" data-wiz-go="2">✏️ Editar oferta</button></div>
             <div id="builderPreview" class="public-card"></div>
             <div class="form-actions sticky-actions">
               <button type="button" class="btn btn-ghost" data-close="builder">Cancelar</button>
+              <button type="button" class="btn btn-ghost" data-wiz-go="2">Volver a editar</button>
               <button class="btn btn-primary">Crear y compartir</button>
             </div>
           </aside>
