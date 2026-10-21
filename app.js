@@ -506,7 +506,7 @@ function publicProposalMarkup(p, mode="full"){
   return `
     <div class="public-card" data-public-id="${escapeHtml(p.id)}" style="--pc:${brandStyle()}">
       <div class="public-brand">${avatarHtml()}${escapeHtml(state.business.name).toUpperCase()}${ratingChip()}</div>
-      ${whoChip()}${contactChip()}
+      ${whoChip()}${advisorLine()}${contactChip()}
       <div class="public-greeting">${escapeHtml(hello(p.client.name))} 👋</div>
       <div class="public-title">${escapeHtml(p.title)}</div>
       ${mode==="full"&&p.status!=="expired"?`<p class="public-intro">${escapeHtml(introText(p))}</p>`:""}
@@ -519,7 +519,7 @@ function publicProposalMarkup(p, mode="full"){
       ${multi&&mode==="full"&&p.status!=="expired"?pickHelperMarkup(p):""}${multi&&mode==="full"?carouselTabsMarkup(p):""}<div class="choice-grid n${p.options.length}${multi&&mode==="full"?" cc-carousel":""}"${multi&&mode==="full"?' tabindex="0" role="group" aria-roledescription="carrusel" aria-label="Opciones de la propuesta"':""}>${p.options.map(o=>optionMarkup(p,o,mode)).join("")}</div>
       ${p.status!=="expired"?detailsMarkup(p):`<div class="public-includes" data-sec="incluye">${includes}</div><div data-sec="pago">${payBlock(p)}</div><p data-sec="condiciones" style="color:#64748b;font-size:13px">${escapeHtml(p.conditions)}</p>`}
       ${p.status!=="expired"?whoMarkup():""}${mode==="full"&&p.status!=="expired"?reviewsMarkup()+assuranceMarkup(p):""}
-      ${mode==="full"&&p.status!=="expired"?`${consultMarkup(p)}<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div>${acceptFormMarkup(p)}`:""}
+      ${mode==="full"&&p.status!=="expired"?`${needMarkup(p)}${consultMarkup(p)}<div class="later-box"><span>¿Necesitás tiempo o consultarlo con alguien?</span><button type="button" id="remindBtn">⏰ Recordame mañana</button><button type="button" id="shareBtn">👥 Compartir con otra persona</button></div><div class="pick-summary" id="pickSummary" hidden></div>${acceptFormMarkup(p)}`:""}
       <div class="public-actions">
         ${mode==="full"&&p.status!=="expired"?`<div class="cta-note" id="ctaNote"></div>`:""}
         ${mode==="full"&&p.status==="expired"?`<button class="public-seña" disabled style="opacity:.5">Propuesta vencida</button>`:mode==="full"?`<button class="public-seña" id="acceptBtn">${escapeHtml(ctaLabel(p,chosenOf(p)))}</button>`:''}
@@ -574,8 +574,8 @@ function renderStrength(p){
 
 function openBuilder(){
   if(!currentUser) return openAuth("login");
-  resetBuilder();
-  openModal("builderModal");
+  resetBuilder(); window._buildStart=Date.now(); _wizNoDraft=false; wizGo(1); wizClearErrors();
+  openModal("builderModal"); offerDraft();
   $("#clientName").focus();
 }
 
@@ -758,7 +758,7 @@ function renderGreeting(){
 }
 let _engBoot=false;
 function renderDashboard(){
-  if(Cloud.on&&currentUser&&!_engBoot){_engBoot=true;loadEngTotals();loadReviews();registerOwnerDevice();loadReferrals();}
+  if(Cloud.on&&currentUser&&!_engBoot){_engBoot=true;loadEngTotals();loadReviews();registerOwnerDevice();loadReferrals();loadResponses();}
   renderGreeting();
   if(syncExpired(state.proposals)) saveState();
   const proposals=state.proposals||[];
@@ -767,11 +767,11 @@ function renderDashboard(){
   $("#metricProposals").textContent=proposals.length;
   $("#metricViews").textContent=views;
   $("#metricAccepted").textContent=accepted;
-  $("#metricConversion").textContent=proposals.length?`${Math.round(accepted/proposals.length*100)}%`:"0%";
+  $("#metricConversion").textContent=proposals.length?`${Math.round(accepted/proposals.length*100)}%`:"—";
 
   const wk=Date.now()-7*DAY, won=proposals.filter(p=>p.status==="accepted"&&new Date(p.acceptedAt)>wk);
   $("#weekCard").innerHTML=proposals.length?`<b>Últimos 7 días</b><div class="week-row"><span><strong>${proposals.filter(p=>new Date(p.createdAt)>wk).length}</strong> enviadas</span><span><strong>${won.length}</strong> aceptadas</span><span><strong>${money(won.reduce((s,p)=>s+finalPrice(chosenOf(p)),0))}</strong> cerrado</span><span><strong>${money(recoveredOf(proposals,+wk).amount)}</strong> tras seguimiento</span></div>`:"";
-  const open=proposals.filter(p=>p.status==="sent"||p.status==="viewed");
+  const open=proposals.filter(p=>(p.status==="sent"||p.status==="viewed")&&!isDormant(p));
   const pending=open.reduce((s,p)=>s+finalPrice(chosenOf(p)),0);
   $("#pendingBanner").innerHTML=open.length?`💰 <b>${money(pending)}</b> esperando respuesta en ${open.length} propuesta${open.length>1?"s":""}. Pronóstico estimado: <b>${money(salesMetrics(proposals).forecast)}</b>. Tocá <b>🔔 Seguimiento</b> para recuperarlas por WhatsApp.`:"";
   const paidBtn=p=>(p.status==="accepted"&&!p.depositPaidAt)?`<button class="text-btn" data-paid="${p.id}">✔ Seña recibida</button>`:"";
@@ -782,21 +782,21 @@ function renderDashboard(){
   const lostBtn=p=>["sent","viewed","expired"].includes(p.status)?`<button class="text-btn" data-lost="${p.id}">✖ Perdida</button>`:"";
   const items=todayItems();
   $("#todayCount").textContent=items.length||"";
-  $("#todayList").innerHTML=items.map(({p,reason})=>`<div class="proposal-item"><div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${heat(p)} · ${reason}</span></div><div>${unlockBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>${improveBtn(p)}`:followBtn(p)+paidBtn(p)+improveBtn(p)+lostBtn(p)}<button class="text-btn" data-open="${p.id}">Abrir</button></div></div>`).join("")||'<p style="color:#64748b">🎉 Todo al día: no hay propuestas para seguir hoy.</p>';
+  $("#todayList").innerHTML=items.map(({p,reason})=>`<div class="proposal-item"><div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${heat(p)} · ${reason}</span></div><div>${unlockBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>${improveBtn(p)}`:followBtn(p)+paidBtn(p)+improveBtn(p)+lostBtn(p)}<button class="text-btn" data-open="${p.id}">Abrir</button></div></div>`).join("")||EMPTY_TODAY(proposals.length);
   $("#hotList").innerHTML=proposals.slice(0,5).map(p=>`
     <div class="proposal-item">
       <div><strong>${escapeHtml(p.client.name)}</strong><span>${money(finalPrice(chosenOf(p)))} · ${p.views||0} vistas</span></div>
       <div><span class="status">${statusLabel(p.status)}</span>${followBtn(p)}<button class="text-btn" data-open="${p.id}">Abrir</button></div>
-    </div>`).join("") || '<p style="color:#64748b">Todavía no hay propuestas.</p>';
+    </div>`).join("") || EMPTY_FIRST();
 
-  $("#activityList").innerHTML=(state.activity||[]).slice(0,6).map(a=>`<div class="activity"><b>${a.icon}</b><div>${escapeHtml(a.text)}<br><span style="color:#94a3b8">${escapeHtml(a.time)}</span></div></div>`).join("");
+  $("#activityList").innerHTML=(state.activity||[]).slice(0,6).map(a=>`<div class="activity"><b>${a.icon}</b><div>${escapeHtml(a.text)}<br><span style="color:#94a3b8">${escapeHtml(a.time)}</span></div></div>`).join("")||EMPTY_ACTIVITY(proposals.length);
   $("#proposalTable").innerHTML=proposals.map(p=>`
     <tr><td><strong>${escapeHtml(p.client.name)}</strong><br><small>${escapeHtml(p.title)}${p.versionNo>1?` · <b>v${p.versionNo}</b>`:""}</small></td>
     <td>${money(finalPrice(chosenOf(p)))}</td>
     <td><span class="badge ${p.status}">${statusLabel(p.status)}</span><br><small>${heat(p)}${engBadge(p)}</small>${stageTag(p)}${nextStepMarkup(p)}</td>
     <td>${p.views||0}</td><td>${relativeTime(p.createdAt)}</td>
-    <td class="actions">${unlockBtn(p)}${followBtn(p)}${paidBtn(p)}${improveBtn(p)}${lostBtn(p)}${reviewBtn(p)}${refAskBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">📊 Atención</button></td></tr>`).join("");
-  $("#clientsGrid").innerHTML=(state.clients||[]).map(c=>`<div class="client"><h3>${escapeHtml(c.name)}</h3><p>${escapeHtml(c.phone)}</p><p>${c.proposals||0} propuesta(s)</p></div>`).join("");
+    <td class="actions">${unlockBtn(p)}${followBtn(p)}${paidBtn(p)}${improveBtn(p)}${lostBtn(p)}${reviewBtn(p)}${refAskBtn(p)}${p.status==="expired"?`<button class="text-btn" data-renew="${p.id}">🔄 Renovar</button>`:""}${p.status==="accepted"?`<button class="text-btn" data-receipt="${p.id}">📄 Constancia</button>`:""}<button class="text-btn" data-copylink="${p.id}">🔗 Link</button><button class="text-btn" data-dup="${p.id}">Duplicar</button><button class="text-btn" data-open="${p.id}">Ver</button><button class="text-btn" data-hist="${p.id}">📊 Atención</button></td></tr>`).join("")||EMPTY_TABLE();
+  $("#clientsGrid").innerHTML=(state.clients||[]).map(c=>`<div class="client"><h3>${escapeHtml(c.name)}</h3><p>${escapeHtml(c.phone)}</p><p>${c.proposals||0} propuesta(s)</p></div>`).join("")||EMPTY_CLIENTS();
   renderPerformance(); renderReferrals();
   $$("[data-open]").forEach(b=>b.addEventListener("click",()=>openPublic(b.dataset.open,true)));
   $$("[data-follow]").forEach(b=>b.addEventListener("click",()=>followUp(b.dataset.follow)));
@@ -814,8 +814,7 @@ function todayItems(){
   const now=Date.now(), out=[];
   const hTxt=h=>h<48?`${Math.floor(h)} h`:`${Math.floor(h/24)} días`;
   state.proposals.forEach(p=>{
-    const fn=p.follow&&p.follow.next;
-    if(fn&&fn.date&&fn.date<=isoDate(now)&&p.status!=="lost"&&!(p.status==="accepted"&&p.depositPaidAt)){out.push({p,reason:`📌 Seguimiento programado${fn.note?`: ${escapeHtml(fn.note)}`:""}.`,prio:0});return;}
+    const tx=todayExtra(p); if(tx==="skip") return; if(tx){out.push(tx); return;}
     if(p.status==="accepted"&&p.proofSentAt&&!p.depositPaidAt){out.push({p,reason:"💸 Avisó que transfirió: verificá y confirmá la seña.",prio:0});return;}
     if(p.remindAt&&p.remindAt<=now&&["sent","viewed"].includes(p.status)){out.push({p,reason:"⏰ Pidió que lo contactes hoy.",prio:0});return;}
     if(p.status==="accepted"&&!p.depositPaidAt&&!p.proofSentAt&&p.payExitAt&&now-p.payExitAt>=20*6e4){out.push({p,reason:"👋 Abrió la pantalla de pago y se fue: ofrecele ayuda con la transferencia.",prio:0});return;}
@@ -854,7 +853,7 @@ function duplicateProposal(id){
   builderKind=p.kind||"service";
   builderOptions=p.options.map(o=>{const {id,...rest}=o;return newOption({...rest,_open:true});});
   renderOptionEditors(); renderCatalog(); renderBuilderPreview();
-  toast("Duplicada: cambiá lo necesario y creá la propuesta.");
+  wizPrefilled(2); toast("Duplicada: cambiá lo necesario y creá la propuesta.");
 }
 function printReceipt(id){
   const p=state.proposals.find(x=>x.id===id); if(!p) return;
@@ -1355,6 +1354,7 @@ function renderPerformance(){
     : accepted<20 ? "Hay vistas pero pocas aceptaciones. Probá destacar mejor la opción recomendada y reducir fricción en la seña."
     : deposits===0 ? "Ya tenés señales de intención. Configurá tu link de Mercado Pago para transformar aceptación en reserva."
     : "Buen rendimiento. Priorizá primero los clientes con varias vistas y sin aceptación.";
+  perfEmptyPass(); renderRecovery();
 }
 
 function showPanel(name){
@@ -2200,7 +2200,7 @@ async function rpcPhotos(name,mk){
 /* ---- «Quién te atiende» ---- */
 function profileOf(x){
   x=x&&typeof x==="object"?x:{}; const s=(v,n)=>String(v||"").trim().replace(/\s+/g," ").slice(0,n);
-  return {trade:s(x.trade,60),area:s(x.area,60),years:Math.min(80,Math.max(0,parseInt(x.years,10)||0)),response:s(x.response,40),bio:String(x.bio||"").trim().slice(0,280),refOn:x.refOn===true||x.refOn==="true",refGive:s(x.refGive,140),refGet:s(x.refGet,140),
+  return {trade:s(x.trade,60),area:s(x.area,60),years:Math.min(80,Math.max(0,parseInt(x.years,10)||0)),response:s(x.response,40),advisor:s(x.advisor,60),bio:String(x.bio||"").trim().slice(0,280),refOn:x.refOn===true||x.refOn==="true",refGive:s(x.refGive,140),refGet:s(x.refGet,140),
     portfolio:(Array.isArray(x.portfolio)?x.portfolio:[]).map(safeImg).filter(Boolean).slice(0,8)};
 }
 const profileEmpty=f=>!(f.trade||f.area||f.years||f.response||f.bio||f.portfolio.length);
@@ -2223,13 +2223,13 @@ function fillProfile(){
   const f=$("#settingsForm"); if(!f||!f.elements.profTrade) return;
   const p=profileOf(state.business&&state.business.profile); state.business.profile=p;
   f.elements.profTrade.value=p.trade; f.elements.profArea.value=p.area; f.elements.profYears.value=p.years||"";
-  f.elements.profResponse.value=p.response; f.elements.profBio.value=p.bio;
+  f.elements.profResponse.value=p.response; f.elements.profBio.value=p.bio; if(f.elements.profAdvisor) f.elements.profAdvisor.value=p.advisor;
   if(f.elements.refOn){f.elements.refOn.checked=p.refOn; f.elements.refGive.value=p.refGive; f.elements.refGet.value=p.refGet;}
   renderPortfolio();
 }
 function readProfile(){
   const f=$("#settingsForm").elements, cur=profileOf(state.business.profile);
-  return profileOf({trade:f.profTrade.value,area:f.profArea.value,years:f.profYears.value,response:f.profResponse.value,bio:f.profBio.value,refOn:!!(f.refOn&&f.refOn.checked),refGive:f.refGive?f.refGive.value:"",refGet:f.refGet?f.refGet.value:"",portfolio:cur.portfolio});
+  return profileOf({trade:f.profTrade.value,area:f.profArea.value,years:f.profYears.value,response:f.profResponse.value,advisor:f.profAdvisor?f.profAdvisor.value:"",bio:f.profBio.value,refOn:!!(f.refOn&&f.refOn.checked),refGive:f.refGive?f.refGive.value:"",refGet:f.refGet?f.refGet.value:"",portfolio:cur.portfolio});
 }
 function renderPortfolio(){
   const box=$("#portfolioGrid"); if(!box) return; const l=profileOf(state.business.profile).portfolio;
@@ -2520,7 +2520,7 @@ function proposalFromReferral(id){
   builderReferral=id;
   const n=$("#clientName"), ph=$("#clientPhone"); n.value=r.friend; ph.value=r.phone;
   [n,ph].forEach(el=>el.dispatchEvent(new Event("input",{bubbles:true})));
-  toast(`Propuesta para ${r.friend}: quedará vinculada a esta recomendación.`);
+  wizPrefilled(2); toast(`Propuesta para ${r.friend}: quedará vinculada a esta recomendación.`);
 }
 async function linkReferral(pid){
   const rid=builderReferral; if(!rid) return; builderReferral=null;
@@ -2576,24 +2576,32 @@ document.addEventListener("change",e=>{
   updateReferral(id,{status:s.value,...(s.value==="won"&&r.reward==="none"?{reward:"pending"}:{})});
 });
 
-/* ===== v39: Destrabar venta · seguimiento comercial · alternativas · siguiente paso ===== */
-/* Todo se guarda en p.follow (motivo con su origen, resultado registrado, próximo seguimiento e historial).
-   Nada cambia el estado real de la propuesta (enviada, aceptada, seña cobrada) por copiar un mensaje o abrir WhatsApp. */
+/* ===== v40: Destrabar venta · diagnóstico asistido, recomendación, mensajes por tono y resultados ===== */
+/* Principio: detectar → diagnosticar → recomendar → actuar → medir. Se distinguen hechos confirmados, señales observadas,
+   hipótesis comerciales e información pendiente. Nada se envía solo, y abrir WhatsApp no cuenta como mensaje enviado. */
 var builderAltOf=null, _dv=null; const _savingFollow=new Set();
-const FOLLOW_REASONS=[
-  {id:"price",icon:"💸",title:"El precio es demasiado alto",desc:"Le parece caro o fuera de su presupuesto."},
-  {id:"payment",icon:"💳",title:"Necesita otra forma de pago",desc:"Cuotas, una seña menor u otro medio."},
-  {id:"includes",icon:"🔎",title:"Tiene dudas sobre lo que incluye",desc:"No le queda claro el alcance o las condiciones."},
-  {id:"unsure",icon:"🤔",title:"No está seguro de avanzar",desc:"Tiene dudas, pero no dijo cuáles."},
-  {id:"not_now",icon:"⏳",title:"Todavía no es el momento",desc:"Prefiere esperar o decidir más adelante."},
-  {id:"comparing",icon:"⚖️",title:"Está comparando con otras opciones",desc:"Está mirando otras propuestas."},
-  {id:"no_response",icon:"🔕",title:"No responde a los mensajes",desc:"Silencio después de enviarle o escribirle."},
-  {id:"other",icon:"💬",title:"Otro motivo",desc:"Algo distinto a lo anterior."}];
-const FOLLOW_SOURCES={client_declared:"Lo dijo el cliente",seller_assumption:"Es una suposición mía",pending:"Pendiente de confirmar"};
-const FOLLOW_STAGES=[["pending_contact","Pendiente de contacto"],["message_sent","Mensaje enviado"],["client_replied","Cliente respondió"],["changes_requested","Solicitó cambios"],["revised_sent","Propuesta revisada y enviada"],["accepted","Aceptada"],["deposit_pending","Seña pendiente"],["confirmed","Venta confirmada"],["lost","Perdida"],["paused","Pausada para más adelante"]];
-const DOUBT_MAP={"Precio":"price","Forma de pago":"payment","Plazo o fecha":"other","Otra consulta":"other"};
-const reasonOf=id=>FOLLOW_REASONS.find(r=>r.id===id);
 const isMissing=e=>!!e&&(e.code==="PGRST202"||/could not find the function/i.test(e.message||""));
+const whoAmI=()=>String((currentUser&&(currentUser.name||currentUser.email||currentUser.id))||"").slice(0,60);
+const DIAGS={
+  not_opened:{L:"A",icon:"📭",title:"Todavía no la abrió",desc:"No hay una apertura registrada."},
+  opened_silent:{L:"B",icon:"👀",title:"La abrió, pero no respondió",desc:"Hay una apertura, sin respuesta explícita."},
+  price:{L:"C",icon:"💸",title:"Le preocupa el precio o la entrega inicial",desc:"Objeción económica."},
+  payment:{L:"D",icon:"💳",title:"Necesita otra forma de pago",desc:"Otro medio o distribución de los pagos."},
+  doubts:{L:"E",icon:"🔎",title:"Tiene dudas sobre la oferta o las condiciones",desc:"Lo incluido, la garantía o el proceso."},
+  comparing:{L:"F",icon:"⚖️",title:"Quiere comparar otra opción",desc:"Está evaluando alternativas."},
+  later:{L:"G",icon:"⏳",title:"Prefiere decidir más adelante",desc:"Falta de timing."},
+  accepted_pending:{L:"H",icon:"🧩",title:"Aceptó o quiere avanzar, pero falta un paso",desc:"Hay una etapa pendiente."},
+  unknown:{L:"I",icon:"❔",title:"Todavía no sabemos qué lo frena",desc:"Falta información."}};
+const LEGACY={includes:"doubts",unsure:"unknown",not_now:"later",no_response:"opened_silent",other:"unknown"};
+const DIAG_SOURCES={client_declared:"Lo dijo el cliente",seller_confirmed:"Lo confirmé yo (llamada o chat)",seller_assumption:"Es una hipótesis mía",pending:"Pendiente de confirmar"};
+const EV_LABEL={confirmed:"Hecho confirmado",observed:"Señal observada",hypothesis:"Hipótesis comercial",pending:"Información pendiente"};
+const TONES={consultivo:"Cercano y consultivo",directo:"Breve y directo",persuasivo:"Persuasivo y respetuoso"};
+const OUTCOMES=[["replied","Respondió"],["clarify","Necesita una aclaración"],["changes","Solicitó una modificación"],["payment_change","Quiere otra forma de pago"],["accepted","Aceptó la propuesta"],["deposit_pending","Reserva pendiente"],["deposit_confirmed","Reserva confirmada"],["sale_closed","Venta cerrada"],["declined","No desea continuar"],["later","Solicitó retomar más adelante"],["no_reply","Sin respuesta"],["other","Otro resultado"]];
+const LEGACY_STAGE={client_replied:"replied",changes_requested:"changes",revised_sent:"changes",confirmed:"sale_closed",paused:"later"};
+const OUTCOME_NEXT={replied:"Respondele cuanto antes y registrá qué pidió.",clarify:"Mandale la aclaración y, si hace falta, sumala a una versión nueva de la propuesta.",changes:"Preparar una alternativa: la original queda intacta.",payment_change:"Revisá las modalidades habilitadas; podés sumar cuotas o bajar la seña con «Mejorar oferta».",accepted:"Explicale cómo continúa y cómo se confirma la reserva.",deposit_pending:"Enviale las instrucciones de pago y verificá la acreditación antes de confirmar.",deposit_confirmed:"Coordiná la entrega o el inicio y pedí la opinión más adelante.",sale_closed:"Cerrá la oportunidad: pedí la opinión y, si corresponde, una recomendación.",declined:"Respetá su decisión: no insistas. Podés marcarla como perdida.",later:"Programá la fecha en la que pidió retomar.",no_reply:"Probá un mensaje breve o cambiá de canal; evitá insistir a diario.",other:"Anotá el contexto en el historial."};
+const DOUBT_MAP={"Precio":"price","Forma de pago":"payment","Plazo o fecha":"doubts","Otra consulta":"unknown"};
+const stageOf=p=>{const s=p.follow&&p.follow.stage; return LEGACY_STAGE[s]||s||"";};
+const isDormant=p=>["sale_closed","declined"].includes(stageOf(p));
 
 function getFollow(p){
   if(!p.follow||typeof p.follow!=="object") p.follow={};
@@ -2601,10 +2609,9 @@ function getFollow(p){
   return p.follow;
 }
 function logFollow(p,type,text){
-  const f=getFollow(p); f.history.push({at:new Date().toISOString(),type,text:String(text).slice(0,240)});
+  const f=getFollow(p); f.history.push({at:new Date().toISOString(),type,text:String(text).slice(0,240),by:whoAmI()});
   if(f.history.length>80) f.history=f.history.slice(-80);
 }
-// Guarda el seguimiento. Si falla, avisa y deja marcado «sin guardar» (no se pierde en silencio dentro de la sesión).
 async function saveFollow(p){
   const f=getFollow(p); f.updatedAt=new Date().toISOString();
   if(!Cloud.on){saveState(); return true;}
@@ -2615,28 +2622,133 @@ async function saveFollow(p){
     await Cloud.rpc("save_proposal_follow",{p_id:p.id,p:clean}); f._unsaved=false; return true;
   }catch(e){
     f._unsaved=true;
-    toast(isMissing(e)?"Falta ejecutar supabase_v9_destrabar.sql: el seguimiento no se guardó en la nube.":"No se pudo guardar el seguimiento. Revisá tu conexión y tocá «Reintentar».");
+    toast(isMissing(e)?"Falta ejecutar supabase_v10_diagnostico.sql: el seguimiento no se guardó en la nube.":"No se pudo guardar el seguimiento. Revisá tu conexión y tocá «Reintentar».");
     return false;
   }finally{_savingFollow.delete(p.id);}
 }
-// Teléfono para WhatsApp: se asume Argentina (+54 9) cuando el número viene sin código de país.
 function waPhone(raw){
   let d=String(raw||"").replace(/\D/g,""); if(d.startsWith("00")) d=d.slice(2);
   if(d.length===10) d="549"+d; else if(d.length===11&&d.startsWith("0")) d="549"+d.slice(1);
   return d.length>=10&&d.length<=15?d:"";
 }
 
+/* ---- respuestas del cliente («¿Qué te falta para decidir?») ---- */
+const RESP_KINDS=[
+  {id:"price",label:"El precio o la entrega inicial",diag:"price"},
+  {id:"payment",label:"Necesito otra forma de pago",diag:"payment"},
+  {id:"includes",label:"Tengo dudas sobre lo que incluye",diag:"doubts"},
+  {id:"compare",label:"Quiero comparar otra opción",diag:"comparing"},
+  {id:"advance",label:"Quiero avanzar con la propuesta",diag:"accepted_pending"},
+  {id:"later",label:"Prefiero retomarlo más adelante",diag:"later"},
+  {id:"other",label:"Otro motivo",diag:"unknown"}];
+const respKind=k=>RESP_KINDS.find(r=>r.id===k)||RESP_KINDS[6];
+var _resp={}, _respErr="";
+const getResponses=p=>Cloud.on?(_resp[p.id]||[]):(Array.isArray(p.responses)?p.responses:[]);
+const openResponses=p=>getResponses(p).filter(r=>!r.answeredAt).sort((a,b)=>new Date(b.at)-new Date(a.at));
+const ASPECTS={precio_total:"el precio total",entrega_inicial:"la entrega inicial",cuotas:"el valor de las cuotas",otro:"otro aspecto del importe"};
+
+/* ---- diagnóstico ---- */
+function diagnose(p){
+  const ev=[], add=(type,text)=>ev.push({type,text}), f=p.follow||{};
+  const when=iso=>iso?relativeTime(typeof iso==="number"?new Date(iso).toISOString():iso):"";
+  if((p.status==="accepted"&&p.depositPaidAt)||stageOf(p)==="sale_closed"){add("confirmed",p.depositPaidAt?"La seña está confirmada.":"Registraste la venta como cerrada."); return {id:"closed",closed:true,source:"observed",evidence:ev};}
+  if(stageOf(p)==="declined"){add("confirmed","Registraste que el cliente no desea continuar."); return {id:"declined",declined:true,source:"observed",evidence:ev};}
+  const dep=depositOf(p,chosenOf(p));
+  if(p.status==="accepted"){
+    add("confirmed",`El cliente aceptó la propuesta${p.acceptedAt?` (${when(p.acceptedAt)})`:""}.`);
+    if(p.depositPct>0){ if(p.proofSentAt) add("observed",`Avisó que transfirió ${when(p.proofSentAt)}; falta que verifiques que se acreditó.`); else add("pending",`La seña de ${money(dep)} todavía no está confirmada.`);}
+    else add("pending","No hay seña configurada: falta coordinar el pago y el inicio.");
+    return {id:"accepted_pending",source:"observed",evidence:ev};
+  }
+  const r=openResponses(p)[0];
+  if(r){
+    const k=respKind(r.kind); add("confirmed",`El cliente respondió «${k.label}» ${when(r.at)}.`);
+    if(r.aspect&&ASPECTS[r.aspect]) add("confirmed",`Indicó que le preocupa ${ASPECTS[r.aspect]}.`);
+    if(r.detail) add("confirmed",`Escribió: “${String(r.detail).slice(0,200)}”.`);
+    if(r.laterDate) add("confirmed",`Pidió retomarlo alrededor del ${fmtDate(r.laterDate)}.`);
+    if(r.kind==="advance") add("observed","Todavía no aceptó la propuesta en el link.");
+    return {id:k.diag,source:"client_declared",evidence:ev,response:r};
+  }
+  if(p.lastDoubt&&DOUBT_MAP[p.lastDoubt]){add("confirmed",`El cliente tocó «${p.lastDoubt}» en la propuesta.`); return {id:DOUBT_MAP[p.lastDoubt],source:"client_declared",evidence:ev};}
+  if((p.views||0)>0){
+    add("observed",`Abrió la propuesta ${p.views} ${p.views===1?"vez":"veces"}${p.lastViewedAt?` (última ${when(p.lastViewedAt)})`:""}.`);
+    add("pending","No hay una respuesta explícita del cliente.");
+    return {id:"opened_silent",source:"observed",evidence:ev};
+  }
+  add("observed","No hay una apertura registrada (las vistas previas de WhatsApp y los robots no cuentan).");
+  if(p.createdAt) add("confirmed",`La propuesta se creó ${when(p.createdAt)}.`);
+  return {id:"not_opened",source:"observed",evidence:ev};
+}
+function effectiveDiag(p){
+  const auto=diagnose(p); if(auto.closed||auto.declined) return auto;
+  const r=getFollow(p).reason;
+  if(r&&r.id){const id=LEGACY[r.id]||r.id; if(DIAGS[id]) return {...auto,id,source:r.source||"seller_assumption",fromSeller:true,autoId:auto.id,note:r.note||""};}
+  return {...auto,autoId:auto.id};
+}
+const isConf=eff=>["client_declared","seller_confirmed"].includes(eff.source);
+function dvCtx(p){
+  const o=chosenOf(p), cheap=[...p.options].sort((a,b)=>finalPrice(a)-finalPrice(b))[0];
+  const insts=Math.max(0,...p.options.filter(x=>x.hasInstallments&&x.installments>1).map(x=>x.installments));
+  const methods=(p.payments||[]).map(k=>PAY[k]).filter(Boolean);
+  return {o,first:firstName(p.client.name)||"",total:money(finalPrice(o)),dep:depositOf(p,o),insts,methods,
+    cheaper:p.options.length>1&&cheap&&cheap.id!==o.id&&finalPrice(cheap)<finalPrice(o)?cheap:null,fu:p.followUps||0};
+}
+function explainDiag(p,eff){
+  const c=dvCtx(p), conf=isConf(eff), id=eff.id;
+  const hyp={
+    not_opened:"Puede que el link no le haya llegado o que todavía no tuvo tiempo de abrirlo.",
+    opened_silent:"Puede que no haya tenido tiempo o que tenga una duda que no expresó. No hay datos para asumir que es el precio.",
+    price:conf?"El importe o la entrega inicial le resultan un obstáculo.":"Podría ser el importe o la entrega inicial, pero todavía no lo confirmó.",
+    payment:conf?"Necesita otro medio o una distribución distinta de los pagos.":"Podría necesitar otra forma de pago, pero no lo dijo.",
+    doubts:conf?"Necesita aclaraciones sobre lo incluido, las condiciones o el proceso.":"Podría tener dudas sobre lo incluido o las condiciones, pero no las expresó.",
+    comparing:"Está evaluando otras alternativas antes de decidir.",
+    later:"Por ahora no es el momento: respetar su tiempo cuida la relación.",
+    accepted_pending:p.status==="accepted"?"Aceptó, pero la reserva no está completa hasta que se verifique la seña.":"Quiere avanzar, pero todavía no completó la aceptación en el link.",
+    unknown:"No hay información suficiente para saber qué lo frena."};
+  const miss={
+    not_opened:"Si el link llegó y si lo pudo abrir.",opened_silent:"Qué le falta para decidir (información, tiempo o presupuesto).",
+    price:"Qué parte del importe le pesa y qué alternativa real le serviría.",payment:"Qué modalidad necesita exactamente.",
+    doubts:"Cuál es la duda concreta.",comparing:"Con qué compara y qué criterio prioriza.",later:"En qué fecha conviene retomar.",
+    accepted_pending:p.proofSentAt?"Si la transferencia está acreditada en tu cuenta.":"Si recibió los datos para pagar y cuándo piensa hacerlo.",unknown:"Qué necesita para decidir."};
+  const why={
+    not_opened:"Antes de insistir conviene confirmar que el cliente puede ver la propuesta.",opened_silent:"Una pregunta corta y abierta invita a responder sin presión.",
+    price:"Revisar el alcance protege tu margen y le da una salida real, sin regalar precio.",payment:"Resolver el cómo pagar suele destrabar más que insistir en el precio.",
+    doubts:"Una duda sin responder frena más que cualquier precio.",comparing:"Comparar con criterios ayuda a decidir con confianza.",
+    later:"Respetar su timing y dejar fecha acordada evita perder la oportunidad.",accepted_pending:"Completar el paso que falta es lo que convierte la aceptación en reserva.",unknown:"Una pregunta abierta es la forma más segura de descubrir qué falta."};
+  const goal={
+    not_opened:"Confirmar que recibió el link.",opened_silent:"Obtener una respuesta o una duda concreta.",price:"Encontrar una alternativa viable o confirmar que no hay margen.",
+    payment:"Acordar una modalidad de pago habilitada.",doubts:"Despejar la duda y volver a la decisión.",comparing:"Que el cliente entienda las diferencias y elija.",
+    later:"Dejar una fecha de seguimiento acordada.",accepted_pending:"Completar la reserva.",unknown:"Identificar qué lo frena."};
+  return {maybe:hyp[id],missing:miss[id],why:why[id],goal:goal[id]};
+}
+function recoActions(p,eff){
+  const c=dvCtx(p);
+  switch(eff.id){
+    case "not_opened":return {p:{k:"msg",l:"Comprobar que el link llegó"},a:{k:"schedule",l:"Programar reenviarlo mañana"}};
+    case "opened_silent":return {p:{k:"msg",l:"Consultar si pudo revisarla"},a:{k:"schedule",l:"Programar un seguimiento"}};
+    case "price":return c.cheaper?{p:{k:"msg",l:`Mostrarle la opción ${c.cheaper.name}`},a:{k:"alt",l:"Preparar una alternativa"}}:{p:{k:"alt",l:"Preparar una alternativa con otro alcance"},a:{k:"msg",l:"Preguntarle qué parte del importe evaluar"}};
+    case "payment":return {p:{k:"msg",l:"Revisar las modalidades habilitadas"},a:{k:"improve",l:"Mejorar oferta (cuotas o seña)"}};
+    case "doubts":return {p:{k:"msg",l:"Responder la duda"},a:{k:"schedule",l:"Ofrecer una llamada y programarla"}};
+    case "comparing":return {p:{k:"msg",l:"Comparar las opciones con criterios"},a:{k:"alt",l:"Preparar otra alternativa"}};
+    case "later":return {p:{k:"schedule",l:"Acordar la fecha de seguimiento"},a:{k:"msg",l:"Confirmarle por WhatsApp"}};
+    case "accepted_pending":return p.status==="accepted"&&p.proofSentAt&&!p.depositPaidAt?{p:{k:"paid",l:"Verificar la transferencia y confirmar la seña"},a:{k:"msg",l:"Escribirle"}}
+      :{p:{k:"msg",l:p.status==="accepted"?"Enviarle cómo continúa":"Ayudarlo a completar la aceptación"},a:{k:"result",l:"Registrar el resultado"}};
+    default:return {p:{k:"msg",l:"Hacer una pregunta abierta y breve"},a:{k:"schedule",l:"Programar un seguimiento"}};
+  }
+}
+
 /* ---- estado comercial y siguiente paso ---- */
 function stageInfo(p){
   if(p.status==="accepted") return {label:p.depositPaidAt?"Seña recibida":p.proofSentAt?"Avisó que transfirió":p.depositPct>0?"Aceptada · seña pendiente":"Aceptada"};
   if(p.status==="lost") return {label:"Perdida"};
-  const st=p.follow&&p.follow.stage, row=st&&FOLLOW_STAGES.find(x=>x[0]===st);
+  const row=OUTCOMES.find(x=>x[0]===stageOf(p));
   if(row) return {label:row[1],registered:true};
   if(p.status==="expired") return {label:"Vencida · sin respuesta"};
   return {label:p.status==="viewed"?"Vista · sin respuesta":"Sin respuesta"};
 }
 function nextStep(p){
   const f=p.follow||{}, now=Date.now(), today=isoDate(now);
+  if(isDormant(p)) return null;
   if(p.status==="lost"){return p.recontactAt&&p.recontactAt<=now?{id:"retake",label:"Retomar la conversación",why:"Llegó la fecha que te propusiste para retomarla.",btn:"Retomar",act:"follow"}:null;}
   if(p.status==="accepted"){
     if(p.depositPaidAt) return {id:"close",label:"Cerrar la oportunidad",why:"La seña está cobrada: registrá el resultado y pedí la opinión.",btn:"Registrar resultado",act:"result"};
@@ -2644,8 +2756,10 @@ function nextStep(p){
       :{id:"deposit",label:"Reserva pendiente: mandale cómo pagar",why:"Aceptó, pero todavía no hay seña.",btn:"Enviar instrucciones",act:"follow"};
     return {id:"accepted",label:"Explicale cómo continúa",why:"Aceptó la propuesta: confirmale los próximos pasos.",btn:"Escribirle",act:"follow"};
   }
+  const r=openResponses(p)[0];
+  if(r&&!(r.kind==="later"&&r.laterDate&&r.laterDate>today)) return {id:"response",label:"Responder lo que pidió el cliente",why:`Respondió: «${respKind(r.kind).label}».`,btn:"Destrabar venta",act:"unlock"};
   if(f.next&&f.next.date&&f.next.date<=today) return {id:"scheduled",label:"Seguimiento programado",why:f.next.note||"Llegó la fecha que programaste.",btn:"Destrabar venta",act:"unlock"};
-  if(f.stage==="changes_requested") return {id:"alt",label:"Preparar la nueva versión",why:"El cliente pidió cambios.",btn:"Preparar alternativa",act:"alt"};
+  if(stageOf(p)==="changes") return {id:"alt",label:"Preparar la nueva versión",why:"El cliente pidió cambios.",btn:"Preparar alternativa",act:"alt"};
   if(p.status==="expired") return {id:"renew",label:"Renovar y retomar",why:"La propuesta venció.",btn:"Renovar",act:"renew"};
   if(p.doubts&&!p.lastFollowUpAt) return {id:"doubt",label:"Responder la duda",why:`El cliente consultó${p.lastDoubt?`: ${p.lastDoubt}`:""} y no recibió respuesta.`,btn:"Destrabar venta",act:"unlock"};
   const last=Math.max(new Date(p.lastViewedAt||p.createdAt).getTime()||0,p.lastFollowUpAt||0), h=(now-last)/36e5;
@@ -2654,8 +2768,8 @@ function nextStep(p){
 }
 const unlockBtn=p=>`<button type="button" class="unlock-btn" data-unlock="${escapeHtml(p.id)}">🔓 Destrabar venta</button>`;
 function nextStepMarkup(p){
-  const ns=nextStep(p); if(!ns) return "";
-  return `<div class="next-step"><button type="button" class="text-btn" data-next="${escapeHtml(p.id)}|${ns.act}" title="${escapeHtml(ns.why)}">➜ ${escapeHtml(ns.label)}</button></div>`;
+  const ns=nextStep(p), nr=openResponses(p).length;
+  return `${nr?`<div class="resp-badge" title="El cliente respondió «¿Qué te falta para decidir?»">💬 ${nr===1?"Respuesta nueva":nr+" respuestas nuevas"}</div>`:""}${ns?`<div class="next-step"><button type="button" class="text-btn" data-next="${escapeHtml(p.id)}|${ns.act}" title="${escapeHtml(ns.why)}">➜ ${escapeHtml(ns.label)}</button></div>`:""}`;
 }
 function stageTag(p){const s=stageInfo(p); return s.registered?`<br><small class="stage-tag">Seguimiento: ${escapeHtml(s.label)}</small>`:"";}
 function runNext(id,act){
@@ -2666,85 +2780,97 @@ function runNext(id,act){
   if(act==="follow") return followUp(id);
   if(act==="paid") return markPaid(id);
 }
+// Agenda «Hoy»: respuestas del cliente y seguimientos pedidos o programados; lo cerrado o rechazado no aparece.
+function todayExtra(p){
+  if(isDormant(p)) return "skip";
+  const today=isoDate(Date.now()), f=p.follow||{};
+  if(p.status==="lost"||(p.status==="accepted"&&p.depositPaidAt)) return null;
+  const r=openResponses(p)[0];
+  if(r&&!(r.kind==="later"&&r.laterDate&&r.laterDate>today)) return {p,reason:`💬 Respondió: «${escapeHtml(respKind(r.kind).label)}».`,prio:0};
+  if(r&&r.kind==="later"&&r.laterDate&&r.laterDate<=today) return {p,reason:"📌 Pidió retomar hoy.",prio:0};
+  if(f.next&&f.next.date&&f.next.date<=today) return {p,reason:`📌 Seguimiento programado${f.next.note?`: ${escapeHtml(f.next.note)}`:""}.`,prio:0};
+  return null;
+}
 
-/* ---- mensajes personalizados (solo datos reales; no se inventan ofertas, descuentos ni condiciones) ---- */
-function stuckContext(p){
-  const o=chosenOf(p), first=firstName(p.client.name)||"", cheapest=[...p.options].sort((a,b)=>finalPrice(a)-finalPrice(b))[0];
-  const insts=Math.max(0,...p.options.filter(x=>x.hasInstallments&&x.installments>1).map(x=>x.installments));
-  const methods=(p.payments||[]).map(k=>PAY[k]).filter(Boolean);
-  return {o,first,cheapest,insts,methods,multi:p.options.length>1,total:money(finalPrice(o)),fu:p.followUps||0};
-}
-function stuckMessage(p,reasonId,opts){
-  const c=stuckContext(p), g=c.first?`Hola, ${c.first}.`:"Hola.", t=`la propuesta “${p.title}”`;
-  const vence=(p.status!=="expired"&&daysLeft(p)>=0&&daysLeft(p)<=3)?` Te aviso que está vigente hasta el ${fmtDate(p.expiresAt)}.`:"";
-  const venc=p.status==="expired"?" Como venció, puedo actualizarla para que la retomemos.":"";
-  const ago=p.lastFollowUpAt?Math.max(1,Math.round((Date.now()-p.lastFollowUpAt)/864e5)):0;
-  let m;
-  switch(reasonId){
-    case "price":
-      m=`${g} Quería saber si pudiste revisar ${t}. Si el importe de ${c.total} no se ajusta a lo que tenías previsto, podemos evaluar una alternativa con un alcance diferente y mantener claras las condiciones.${c.multi&&c.cheapest&&c.cheapest.id!==c.o.id?` Por ejemplo, la propuesta también incluye la opción ${c.cheapest.name} (${money(finalPrice(c.cheapest))}).`:""} ¿Te parece que la prepare?`; break;
-    case "payment":{
-      const bits=[]; if(c.methods.length) bits.push(c.methods.join(", "));
-      if(c.insts>1) bits.push(`hasta ${c.insts} cuotas`); if(p.depositPct>0) bits.push(`reserva con una seña de ${money(depositOf(p,c.o))}`);
-      m=`${g} Quería saber si pudiste revisar ${t}. Podemos repasar las modalidades de pago${bits.length?` (hoy contempla: ${bits.join("; ")})`:" disponibles"} para ver cuál se adapta mejor a tus posibilidades. ¿Te gustaría que las revisemos?`; break;}
-    case "includes":
-      m=`${g} ¿Cómo estás? Quería saber si te quedó alguna duda sobre ${t}, lo que incluye o las condiciones. Estoy a disposición para aclarártela y ayudarte a evaluar la mejor opción.`; break;
-    case "unsure":
-      m=`${g} Quería saber cómo venís con ${t}. Si hay algo que te genera dudas o querés revisar algún punto antes de decidir, lo vemos juntos sin apuro. ¿Qué es lo que más te gustaría aclarar?`; break;
-    case "not_now":
-      m=`${g} Quería saber cómo venís con ${t}. Entiendo que quizá no sea el momento indicado. Si te parece, podemos retomar el tema más adelante, cuando te resulte conveniente.${vence}`; break;
-    case "comparing":
-      m=`${g} Quería saber si pudiste evaluar ${t}. Si estás comparando alternativas, podemos revisar juntos qué incluye cada opción para que tengas claras las diferencias antes de decidir.`; break;
-    case "no_response":
-      m=c.fu>=2?`${g} Te escribo una última vez por ${t}, para no ser insistente. Si en algún momento querés retomarla, avisame y la actualizamos. ¡Gracias por tu tiempo!`
-        :`${g} ¿Cómo estás? Te escribo para saber si pudiste revisar ${t} que te envié${ago?` (te escribí hace ${ago} ${ago===1?"día":"días"})`:""}. Si te quedó alguna duda o necesitás ajustar algo, avisame y lo vemos.`; break;
-    default:
-      m=`${g} Quería saber si pudiste revisar ${t}. Si hay algo puntual que te esté frenando, contame y vemos cómo resolverlo.`;
-  }
-  if(reasonId!=="no_response"||c.fu<2) m+=venc;
-  if(opts&&opts.link) m+=`\n\n${shareLink(p)}`;
+/* ---- mensajes de WhatsApp: 3 tonos, regenerables, solo con datos reales ---- */
+function buildMsg(p,eff,tone,variant,link){
+  const c=dvCtx(p), conf=isConf(eff), n=c.first, t=`“${p.title}”`, T=tone==="persuasivo"?"la propuesta":`la propuesta de ${t}`, v=variant%2;
+  const open={
+    consultivo:[n?`Hola, ${n}. ¿Cómo estás?`:"Hola. ¿Cómo estás?",n?`Hola, ${n}, ¿todo bien?`:"Hola, ¿todo bien?"],
+    directo:[n?`Hola, ${n}.`:"Hola.",n?`Hola, ${n}:`:"Hola:"],
+    persuasivo:[n?`Hola, ${n}. Te escribo por la propuesta de ${t}.`:`Hola. Te escribo por la propuesta de ${t}.`,n?`Hola, ${n}. Quería retomar la propuesta de ${t}.`:`Hola. Quería retomar la propuesta de ${t}.`]}[tone][v];
+  const bits=[...(c.methods.length?[c.methods.join(", ")]:[]),...(c.insts>1?[`hasta ${c.insts} cuotas`]:[]),...(p.depositPct>0?[`seña de ${money(c.dep)}`]:[])];
+  const pay=bits.length?`Hoy contempla: ${bits.join("; ")}.`:"Podemos repasar las modalidades que figuran en la propuesta.";
+  const r=eff.response, detail=r&&r.detail?` Me contaste: “${String(r.detail).slice(0,140)}”.`:"";
+  const aspect=r&&r.aspect&&ASPECTS[r.aspect]?` Me dijiste que te preocupa ${ASPECTS[r.aspect]}.`:"";
+  const cheap=c.cheaper?` La propuesta incluye también la opción ${c.cheaper.name} (${money(finalPrice(c.cheaper))}).`:"";
+  const dateTxt=r&&r.laterDate?` alrededor del ${fmtDate(r.laterDate)}`:"", vig=(p.status!=="expired"&&daysLeft(p)>=0)?` La propuesta está vigente hasta el ${fmtDate(p.expiresAt)}.`:"";
+  const C={
+    not_opened:{consultivo:`Quería asegurarme de que te haya llegado ${T}. Si no pudiste abrir el link o preferís que te la mande de otra forma, avisame.`,
+      directo:`¿Te llegó ${T}? Si no se abrió el link, te la reenvío.`,
+      persuasivo:"Quiero que puedas verla con tranquilidad. Si el link no te abrió o preferís otro formato, decime y te la envío de otra manera."},
+    opened_silent:{consultivo:`Quería saber si pudiste revisar ${T}. ¿Hay algo que te gustaría aclarar o adaptar para que se ajuste mejor a lo que necesitás?`,
+      directo:`¿Pudiste revisar ${T}? Si tenés alguna duda, decime.`,
+      persuasivo:"Quiero ayudarte a decidir con tranquilidad. Contame qué te gustaría aclarar o ver distinto y lo resolvemos."},
+    price:{consultivo:conf?`Entiendo que el importe es un punto importante.${aspect} Podemos revisar las alternativas disponibles y ver si hay alguna que se adapte mejor a tu presupuesto.${cheap} ¿Qué parte te gustaría que evaluemos?`
+        :`Si el importe de ${c.total} no se ajusta a lo que tenías previsto, podemos evaluar una alternativa con un alcance diferente y mantener claras las condiciones.${cheap} ¿Te parece que la prepare?`,
+      directo:conf?`¿Qué parte del importe te gustaría que revisemos?${cheap}`:"Si el importe no es lo que esperabas, puedo preparar una alternativa con otro alcance. ¿Te sirve?",
+      persuasivo:conf?`Quiero que encontremos algo que te cierre. Revisemos juntos qué parte del importe pesa más y qué alcance podemos ajustar sin perder lo importante.${cheap}`
+        :"Si el importe es lo que te frena, podemos ver una alternativa con otro alcance y condiciones claras. ¿Querés que te la prepare?"},
+    payment:{consultivo:conf?`Entiendo que necesitás otra forma de pago. ${pay} ¿Qué modalidad te vendría mejor? La reviso y te cuento qué es posible.${detail}`:`Si te resulta más cómodo otra forma de pago, podemos repasarlas. ${pay} ¿Cuál te vendría mejor?`,
+      directo:conf?`¿Qué forma de pago te vendría mejor? ${pay}`:`¿Preferís otra forma de pago? ${pay}`,
+      persuasivo:conf?`Quiero que el pago no sea un obstáculo. ${pay} Contame qué modalidad te vendría bien y veo qué se puede hacer.`:`Quiero que pagar sea cómodo para vos. ${pay} ¿Querés que elijamos juntos la que mejor te quede?`},
+    doubts:{consultivo:conf?`Quiero que tengas todo claro antes de decidir.${detail} ¿Qué parte de la propuesta te gustaría que te explique mejor?`:"Quiero que tengas todo claro antes de decidir. ¿Hay algo de lo que incluye, los plazos o las condiciones que te gustaría que te aclare?",
+      directo:conf?`¿Qué parte querés que te aclare?${detail} Te respondo enseguida.`:"¿Te quedó alguna duda sobre lo que incluye o las condiciones?",
+      persuasivo:"Prefiero que decidas con toda la información. Preguntame lo que necesites sobre lo que incluye, los plazos o las condiciones, y lo vemos juntos."},
+    comparing:{consultivo:"Si te sirve, podemos comparar las opciones y revisar las diferencias para que elijas con más tranquilidad. ¿Qué es lo más importante para vos al momento de decidir?",
+      directo:"¿Querés que comparemos las opciones? Decime qué es lo que más priorizás.",
+      persuasivo:"Elegir bien lleva su tiempo. Si estás comparando alternativas, repasemos juntos qué incluye cada una y en qué se diferencian, así decidís con claridad."},
+    later:{consultivo:conf?`Gracias por avisarme que preferís retomarlo más adelante. ¿Te escribo${dateTxt||" en una fecha que te quede cómoda"}?${vig}`:"Entiendo si no es el momento ideal. Si te parece, lo retomamos más adelante: ¿qué día te quedaría cómodo que te escriba?",
+      directo:"¿Qué día te viene bien que retomemos la propuesta?",
+      persuasivo:`Sin apuro. ¿Te parece que lo retomemos${dateTxt||" más adelante"}?${vig} Te escribo cuando me digas.`},
+    unknown:{consultivo:`Quería saber cómo venís con ${T}. ¿Hay algo que te gustaría aclarar o cambiar para poder avanzar?`,
+      directo:`¿Cómo venís con ${T}? ¿Te falta algo para decidir?`,
+      persuasivo:"Me gustaría ayudarte a decidir con tranquilidad. ¿Qué es lo que más te falta saber para avanzar?"}};
+  let core;
+  if(eff.id==="accepted_pending"){
+    const sub=p.status==="accepted"?(p.proofSentAt?"verify":p.depositPct>0?"deposit":"nodep"):"advance";
+    core={verify:{consultivo:"Gracias por avisarme la transferencia. En cuanto la vea acreditada te confirmo la reserva.",directo:"Gracias por avisar. Cuando se acredite la transferencia te confirmo la reserva.",persuasivo:"Gracias por avisarme la transferencia. Apenas la vea acreditada te confirmo la reserva y coordinamos los próximos pasos."},
+      deposit:{consultivo:`Gracias por avanzar con ${T}. Para dejarlo reservado falta la seña de ${money(c.dep)}. ¿Te paso los datos para pagarla o preferís otra forma?`,directo:`Para reservar falta la seña de ${money(c.dep)}. ¿Te paso los datos?`,persuasivo:`Ya casi está: el último paso es la seña de ${money(c.dep)}. Si querés, te paso ahora los datos y te explico cómo seguimos.`},
+      nodep:{consultivo:`Gracias por aceptar ${T}. ¿Coordinamos cómo seguimos y cuándo te viene bien empezar?`,directo:"Gracias por aceptar. ¿Coordinamos cómo seguimos?",persuasivo:"Gracias por confiar. Coordinemos ahora los próximos pasos para que quede todo listo."},
+      advance:{consultivo:`Me alegra que quieras avanzar con ${T}. Para dejarlo confirmado tenés que aceptar la propuesta desde el link (es un paso y no te cobra nada). Si preferís, te voy guiando por acá.`,directo:"Para avanzar, aceptá la propuesta desde el link (no te cobra nada). Si querés, te guío.",persuasivo:"¡Genial que quieras avanzar! Solo falta aceptar la propuesta desde el link; en ese paso no se cobra nada y yo te acompaño con el resto."}}[sub][tone];
+  }else core=(C[eff.id]||C.unknown)[tone];
+  let m=`${open} ${core}${v?" Quedo a disposición.":""}`;
+  if(link) m+=`\n\n${shareLink(p)}`;
   return m;
-}
-function stuckReco(p,id){
-  const c=stuckContext(p);
-  const R={
-    price:{t:"Antes de bajar el precio, ofrecé una alternativa con otro alcance: así cuidás tu margen y le das una salida. La original queda intacta.",b:[["alt","🧩 Preparar alternativa"]]},
-    payment:{t:`Revisá qué podés ofrecer de verdad: ${c.insts>1?"ya hay cuotas cargadas; ":""}podés sumar cuotas o bajar la seña con «Mejorar oferta».`,b:[["improve","✨ Mejorar oferta (cuotas / seña)"]]},
-    includes:{t:"Respondé punto por punto qué incluye y qué no. Si el cliente lo pidió, agregá ese detalle a la propuesta para que no vuelva a surgir.",b:[]},
-    unsure:{t:"No empujes la seña: preguntale qué punto lo frena y ofrecele una llamada corta. Registrá su respuesta como «lo dijo el cliente».",b:[["schedule","📌 Programar seguimiento"]]},
-    not_now:{t:"Acordá una fecha para retomar y dejala programada: respetás su tiempo y no perdés la oportunidad.",b:[["schedule","📌 Programar seguimiento"]]},
-    comparing:{t:"Ayudalo a comparar con criterios (alcance, plazos, garantía), no solo por precio. Si tenés una ventaja real, nombrala.",b:[]},
-    no_response:{t:c.fu>=2?"Ya le escribiste varias veces: mandá un cierre amable y dejá la propuesta disponible. Evitá insistir a diario.":"Espaciá los mensajes y probá otro canal si lo tenés (llamada). Un recordatorio breve rinde más que varios seguidos.",b:[["schedule","📌 Programar seguimiento"]]},
-    other:{t:"Preguntale directamente qué lo frena y registrá lo que conteste para dejar claro su origen.",b:[]}};
-  return R[id]||R.other;
 }
 
 /* ---- ventana «Destrabar venta» ---- */
 const dvP=()=>_dv&&state.proposals.find(x=>x.id===_dv.id);
-const dvSuggested=(p,id)=>p.lastDoubt&&DOUBT_MAP[p.lastDoubt]===id?"client_declared":"seller_assumption";
 function openDestrabar(id,opts){
   const p=state.proposals.find(x=>x.id===id); if(!p) return toast("No encontré esa propuesta.");
-  opts=opts||{}; const cur=getFollow(p).reason;
-  _dv={id,reason:cur?cur.id:"",source:cur?cur.source:"seller_assumption",msg:"",edited:false,link:true};
+  opts=opts||{}; const f=getFollow(p);
+  _dv={id,tone:TONES[f.tone]?f.tone:"consultivo",variant:0,msg:"",edited:false,link:true};
   openTool(`<div class="dv" id="dvRoot" role="region" aria-label="Destrabar venta"></div>`);
   $("#toolModal").classList.add("wide");
   const root=$("#dvRoot");
   root.innerHTML=`<header class="dv-top"><div><span class="eyebrow">DESTRABAR VENTA</span><h3 id="dvTitle"></h3><p class="dv-sub" id="dvSub"></p></div><span class="dv-stage" id="dvStage"></span></header>
     <div id="dvWarn"></div>
-    <section class="dv-sec" aria-label="Datos de la oportunidad"><div id="dvOpp"></div></section>
-    <section class="dv-sec"><h4 id="dvH2">¿Qué está frenando esta venta?</h4><div class="dv-reasons" id="dvReasons" role="radiogroup" aria-labelledby="dvH2"></div><div id="dvSrc"></div></section>
-    <div id="dvAct" hidden></div>
+    <section class="dv-sec" id="dvCtx" aria-label="Contexto de la oportunidad"></section>
+    <section class="dv-sec" id="dvDiag" aria-labelledby="dvDiagH"></section>
+    <section class="dv-sec" id="dvReco" aria-labelledby="dvRecoH"></section>
+    <section class="dv-sec" id="dvMsgSec" aria-labelledby="dvMsgH"></section>
     <details class="dv-acc" id="dvAlt"><summary>🧩 Preparar una alternativa</summary><div class="dv-accbody" id="dvAltBody"></div></details>
     <details class="dv-acc" id="dvNext"><summary>📌 Programar seguimiento</summary><div class="dv-accbody" id="dvNextBody"></div></details>
     <details class="dv-acc" id="dvRes"><summary>🏁 Registrar resultado</summary><div class="dv-accbody" id="dvResBody"></div></details>
     <details class="dv-acc" id="dvHist"><summary>🕘 Historial y versiones</summary><div class="dv-accbody" id="dvHistBody"></div></details>`;
   dvBind(root); dvPaintAll();
   if(opts.open&&$("#"+opts.open)) $("#"+opts.open).open=true;
-  const first=root.querySelector(".dv-reason"); if(first) try{first.focus({preventScroll:true});}catch(e){}
+  const h=$("#dvTitle"); if(h){h.tabIndex=-1; try{h.focus({preventScroll:true});}catch(e){}}
 }
-function dvPaintAll(){dvPaintTop(); dvPaintOpp(); dvPaintReasons(); dvPaintAct(); dvPaintAlt(); dvPaintNext(); dvPaintRes(); dvPaintHist(); dvPaintWarn();}
+function dvPaintAll(){dvPaintTop(); dvPaintCtx(); dvPaintDiag(); dvPaintReco(); dvPaintMsg(); dvPaintAlt(); dvPaintNext(); dvPaintRes(); dvPaintHist(); dvPaintWarn();}
 function dvPaintTop(){
-  const p=dvP(); if(!p) return; const e=escapeHtml;
+  const p=dvP(); if(!p) return;
   $("#dvTitle").textContent=`Presupuesto de ${fullName(p.client.name)||"cliente sin nombre"}`;
   $("#dvSub").textContent=p.title; $("#dvStage").textContent=stageInfo(p).label;
 }
@@ -2754,101 +2880,152 @@ function dvPaintWarn(){
 }
 function dvLastActivity(p){
   const f=getFollow(p), c=[[p.lastViewedAt,"El cliente abrió la propuesta"],[p.lastFollowUpAt,"Último seguimiento enviado"],[p.acceptedAt,"El cliente aceptó"]];
+  const rs=getResponses(p).slice().sort((a,b)=>new Date(b.at)-new Date(a.at))[0]; if(rs) c.push([rs.at,`El cliente respondió «${respKind(rs.kind).label}»`]);
   const h=f.history[f.history.length-1]; if(h) c.push([h.at,h.text]);
   const best=c.map(([t,l])=>[t?new Date(t).getTime():0,l]).filter(x=>x[0]>0).sort((a,b)=>b[0]-a[0])[0];
   return best?`${relativeTime(new Date(best[0]).toISOString())} · ${best[1]}`:"Sin actividad registrada";
 }
-function dvPaintOpp(){
+function dvPaintCtx(){
   const p=dvP(); if(!p) return; const e=escapeHtml, o=chosenOf(p), multi=p.options.length>1;
   const sub=multi?(p.chosenOption?`Opción elegida: ${o.name}`:`Opción recomendada: ${o.name} (hay ${p.options.length} opciones)`):"";
-  const acts=[]; if(p.followUps) acts.push(`${p.followUps} seguimiento${p.followUps>1?"s":""} enviado${p.followUps>1?"s":""}`);
-  const hist=getFollow(p).history; const cp=hist.filter(h=>h.type==="copied").length, wa=hist.filter(h=>h.type==="whatsapp").length;
-  if(cp) acts.push(`${cp} mensaje${cp>1?"s":""} copiado${cp>1?"s":""}`); if(wa) acts.push(`WhatsApp abierto ${wa} ${wa>1?"veces":"vez"}`);
-  const ns=nextStep(p);
-  $("#dvOpp").innerHTML=`<dl class="dv-facts"><div><dt>Importe</dt><dd>${money(finalPrice(o))}</dd>${sub?`<small>${e(sub)}</small>`:""}</div>
+  const hist=getFollow(p).history, acts=[]; if(p.followUps) acts.push(`${p.followUps} seguimiento${p.followUps>1?"s":""} registrado${p.followUps>1?"s":""} como enviado${p.followUps>1?"s":""}`);
+  const cp=hist.filter(h=>h.type==="copied").length, wa=hist.filter(h=>h.type==="whatsapp").length;
+  if(cp) acts.push(`${cp} mensaje${cp>1?"s":""} preparado${cp>1?"s":""} y copiado${cp>1?"s":""}`); if(wa) acts.push(`WhatsApp abierto ${wa} ${wa>1?"veces":"vez"}`);
+  const ns=nextStep(p), rs=getResponses(p).slice().sort((a,b)=>new Date(b.at)-new Date(a.at));
+  $("#dvCtx").innerHTML=`<dl class="dv-facts"><div><dt>Importe</dt><dd>${money(finalPrice(o))}</dd>${sub?`<small>${e(sub)}</small>`:""}</div>
     <div><dt>Estado</dt><dd>${e(stageInfo(p).label)}</dd></div><div><dt>Creada</dt><dd>${p.createdAt?relativeTime(p.createdAt):"—"}</dd></div>
     <div><dt>Última actividad</dt><dd class="dv-small">${e(dvLastActivity(p))}</dd></div></dl>
     <p class="dv-acts">${acts.length?`Acciones registradas: ${e(acts.join(" · "))}.`:"Todavía no registraste acciones sobre esta propuesta."}</p>
-    ${ns?`<div class="dv-next"><span>Siguiente paso recomendado:</span> <b>${e(ns.label)}</b><small>${e(ns.why)}</small>${ns.act!=="unlock"?`<button type="button" class="btn btn-secondary btn-sm" data-dv-run="${ns.act}">${e(ns.btn)}</button>`:""}</div>`:""}`;
+    <h5>Respuestas del cliente a «¿Qué te falta para decidir?»</h5>
+    ${rs.length?`<ul class="dv-resps">${rs.map(r=>`<li class="${r.answeredAt?"done":""}"><div><b>${e(respKind(r.kind).label)}</b>${r.aspect&&ASPECTS[r.aspect]?` · ${e(ASPECTS[r.aspect])}`:""}${r.laterDate?` · retomar ${e(fmtDate(r.laterDate))}`:""}${r.detail?`<p>“${e(r.detail)}”</p>`:""}<small>${relativeTime(r.at)}${r.answeredAt?" · respondida":""}</small></div>${r.answeredAt?"":`<button type="button" class="text-btn" data-dv-ans="${e(r.id)}">Marcar como respondida</button>`}</li>`).join("")}</ul>`
+      :`<p class="dv-hint">El cliente todavía no respondió esa pregunta en la propuesta. ${_respErr==="missing"&&Cloud.on?"(Falta ejecutar supabase_v10_diagnostico.sql para ver respuestas.)":""}</p>`}
+    ${ns?`<div class="dv-next"><span>Siguiente paso recomendado:</span> <b>${e(ns.label)}</b><small>${e(ns.why)}</small></div>`:""}`;
 }
-function dvPaintReasons(){
-  const p=dvP(); if(!p) return; const e=escapeHtml;
-  $("#dvReasons").innerHTML=FOLLOW_REASONS.map(r=>`<button type="button" class="dv-reason${_dv.reason===r.id?" on":""}" role="radio" aria-checked="${_dv.reason===r.id}" data-dv-reason="${r.id}"><span class="dv-ic" aria-hidden="true">${r.icon}</span><span><b>${e(r.title)}</b><small>${e(r.desc)}</small></span></button>`).join("");
-  const sug=p.lastDoubt&&DOUBT_MAP[p.lastDoubt]&&_dv.reason!==DOUBT_MAP[p.lastDoubt]?`<p class="dv-hint">El cliente tocó «${e(p.lastDoubt)}» en la propuesta. <button type="button" class="text-btn" data-dv-reason="${DOUBT_MAP[p.lastDoubt]}" data-dv-declared="1">Usar ese motivo como declarado</button></p>`:"";
-  $("#dvSrc").innerHTML=_dv.reason?`<label class="dv-src">¿Cómo lo sabés?<select id="dvSource">${Object.entries(FOLLOW_SOURCES).map(([k,v])=>`<option value="${k}"${k===_dv.source?" selected":""}>${e(v)}</option>`).join("")}</select></label><p class="dv-hint">Queda guardado para no confundir lo que dijo el cliente con lo que suponés.</p>${sug}`:`<p class="dv-hint">Elegí un motivo (uno solo; podés cambiarlo cuando quieras).</p>${sug}`;
+function dvPaintDiag(){
+  const p=dvP(), box=$("#dvDiag"); if(!p) return; const e=escapeHtml, eff=effectiveDiag(p), f=getFollow(p);
+  if(eff.closed){box.innerHTML=`<h4 id="dvDiagH">Diagnóstico</h4><div class="dv-banner ok">✅ Esta venta figura como cerrada. No hay nada para destrabar; podés pedir la opinión o una recomendación.</div>`; return;}
+  if(eff.declined){box.innerHTML=`<h4 id="dvDiagH">Diagnóstico</h4><div class="dv-banner warn">🛑 El cliente indicó que no desea continuar. Respetá su decisión: no se recomiendan más mensajes comerciales.<div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" data-dv-lost="${e(p.id)}">Marcar como perdida</button></div></div>`; return;}
+  const d=DIAGS[eff.id], x=explainDiag(p,eff), srcTxt=eff.fromSeller?DIAG_SOURCES[eff.source]||"Hipótesis mía":(eff.source==="client_declared"?"Lo dijo el cliente":"Señal que registró CierraClick");
+  const evs=[...eff.evidence.map(v=>[v.type,v.text]),["hypothesis",x.maybe],["pending",x.missing]];
+  const changed=eff.fromSeller&&eff.autoId&&eff.autoId!==eff.id;
+  box.innerHTML=`<h4 id="dvDiagH">Diagnóstico</h4>
+    <div class="dv-diag-card"><span class="dv-ic" aria-hidden="true">${d.icon}</span><div><b>${d.L}. ${e(d.title)}</b><small>${e(d.desc)}</small></div><span class="dv-src-tag">${e(srcTxt)}</span></div>
+    ${changed?`<p class="dv-hint">CierraClick detectó «${e(DIAGS[eff.autoId].title)}», pero vos lo cambiaste.</p>`:""}
+    <ul class="dv-ev">${evs.map(([t,s])=>`<li class="ev-${t}"><span class="ev-chip">${EV_LABEL[t]}</span>${e(s)}</li>`).join("")}</ul>
+    ${f.context?`<p class="dv-hint"><b>Tu contexto:</b> ${e(f.context)} <i>(información tuya, no confirmada por el cliente)</i></p>`:""}
+    <details class="dv-change"><summary>Confirmar o cambiar el diagnóstico</summary>
+      <div class="dv-reasons" role="radiogroup" aria-label="Diagnóstico">${Object.entries(DIAGS).map(([id,g])=>`<button type="button" class="dv-reason${eff.id===id?" on":""}" role="radio" aria-checked="${eff.id===id}" data-dv-diag="${id}"><span class="dv-ic" aria-hidden="true">${g.icon}</span><span><b>${g.L}. ${e(g.title)}</b><small>${e(g.desc)}</small></span></button>`).join("")}</div>
+      <label class="dv-src">¿Cómo lo sabés?<select id="dvSource">${Object.entries(DIAG_SOURCES).map(([k,v])=>`<option value="${k}"${(eff.fromSeller?eff.source:"seller_confirmed")===k?" selected":""}>${e(v)}</option>`).join("")}</select></label>
+      <div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" id="dvConfirm">Es correcto: confirmarlo</button></div>
+      <p class="dv-hint">Queda guardado para no confundir lo que dijo el cliente con lo que suponés.</p>
+      <label class="dv-src">Contexto adicional (opcional)<textarea id="dvContext" maxlength="500" rows="2" placeholder="Ej: hablamos por teléfono y me dijo que lo ve con su socio">${e(f.context||"")}</textarea></label>
+      <div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" id="dvCtxSave">Guardar contexto</button></div>
+    </details>`;
 }
-function dvPaintAct(){
-  const p=dvP(), box=$("#dvAct"); if(!p||!_dv.reason){if(box) box.hidden=true; return;}
-  const e=escapeHtml, reco=stuckReco(p,_dv.reason), first=firstName(p.client.name);
-  if(!_dv.edited) _dv.msg=stuckMessage(p,_dv.reason,{link:_dv.link});
-  box.hidden=false;
-  box.innerHTML=`<section class="dv-sec"><h4>Qué te conviene hacer</h4><p class="dv-reco">${e(reco.t)}</p>${reco.b.length?`<div class="dv-btns">${reco.b.map(([a,l])=>`<button type="button" class="btn btn-secondary btn-sm" data-dv-act="${a}">${e(l)}</button>`).join("")}</div>`:""}</section>
-    <section class="dv-sec"><h4>Mensaje${first?` para ${e(first)}`:""}</h4>
-      <label class="check-row dv-link"><input type="checkbox" id="dvLink"${_dv.link?" checked":""}><span>Incluir el link de la propuesta</span></label>
-      <label class="sr-only" for="dvMsg">Mensaje para el cliente</label>
-      <textarea id="dvMsg" rows="7" maxlength="1200">${e(_dv.msg)}</textarea>
-      <div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" id="dvEdit">✏️ Editar mensaje</button><button type="button" class="btn btn-secondary btn-sm" id="dvCopy">📋 Copiar mensaje</button><button type="button" class="btn btn-primary btn-sm" id="dvWa">💬 Abrir WhatsApp</button><button type="button" class="btn btn-secondary btn-sm" data-dv-act="alt">🧩 Preparar alternativa</button></div>
-      <button type="button" class="text-btn" id="dvReset"${_dv.edited?"":" hidden"}>↺ Volver al mensaje sugerido</button>
-      <div id="dvPhone"></div>
-      <p class="dv-note">No se envía nada automáticamente: revisá el texto y enviálo vos.</p>
-      <div id="dvSentAsk" class="dv-sentask" hidden>¿Ya lo enviaste? <button type="button" class="btn btn-secondary btn-sm" id="dvMarkSent">Sí, registrar como enviado</button></div>
-    </section>`;
+function dvPaintReco(){
+  const p=dvP(), box=$("#dvReco"); if(!p) return; const e=escapeHtml, eff=effectiveDiag(p);
+  if(eff.closed||eff.declined){box.hidden=true; return;} box.hidden=false;
+  const x=explainDiag(p,eff), act=recoActions(p,eff), know=eff.evidence.filter(v=>v.type==="confirmed"||v.type==="observed");
+  box.innerHTML=`<h4 id="dvRecoH">Qué te conviene hacer</h4>
+    ${eff.id==="unknown"?`<div class="dv-empty"><p>Todavía no sabemos qué necesita el cliente para decidir. Podés enviarle una pregunta breve para descubrirlo.</p></div>`:""}
+    <dl class="dv-why"><div><dt>Qué sabemos</dt><dd>${know.length?e(know.map(v=>v.text).join(" ")):"Todavía no hay datos confirmados."}</dd></div>
+      <div><dt>Qué podría estar frenando</dt><dd>${e(x.maybe)} <i>(hipótesis)</i></dd></div>
+      <div><dt>Qué falta confirmar</dt><dd>${e(x.missing)}</dd></div>
+      <div><dt>Acción recomendada</dt><dd><b>${e(act.p.l)}</b></dd></div>
+      <div><dt>Por qué</dt><dd>${e(x.why)}</dd></div>
+      <div><dt>Resultado que buscamos</dt><dd>${e(x.goal)}</dd></div></dl>
+    <div class="dv-btns"><button type="button" class="btn btn-primary btn-sm" data-dv-k="${act.p.k}">${e(act.p.l)}</button><button type="button" class="btn btn-secondary btn-sm" data-dv-k="${act.a.k}">${e(act.a.l)}</button></div>`;
+}
+function dvRegen(){const p=dvP(), eff=effectiveDiag(p); _dv.msg=buildMsg(p,eff,_dv.tone,_dv.variant,_dv.link); _dv.edited=false;}
+function dvPaintMsg(){
+  const p=dvP(), box=$("#dvMsgSec"); if(!p) return; const e=escapeHtml, eff=effectiveDiag(p);
+  if(eff.closed||eff.declined){box.hidden=true; return;} box.hidden=false;
+  if(!_dv.edited) dvRegen();
+  const first=firstName(p.client.name);
+  box.innerHTML=`<h4 id="dvMsgH">Mensaje${first?` para ${e(first)}`:""}</h4>
+    <div class="dv-tones" role="radiogroup" aria-label="Tono del mensaje">${Object.entries(TONES).map(([k,l])=>`<label class="dv-tone${_dv.tone===k?" on":""}"><input type="radio" name="dvTone" value="${k}" data-dv-tone="${k}"${_dv.tone===k?" checked":""}>${e(l)}</label>`).join("")}</div>
+    <label class="check-row dv-link"><input type="checkbox" id="dvLink"${_dv.link?" checked":""}><span>Incluir el link de la propuesta</span></label>
+    <label class="sr-only" for="dvMsg">Mensaje para el cliente</label>
+    <textarea id="dvMsg" rows="7" maxlength="1200">${e(_dv.msg)}</textarea>
+    <div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" id="dvEdit">✏️ Editar mensaje</button><button type="button" class="btn btn-secondary btn-sm" id="dvRegen">🔄 Regenerar</button><button type="button" class="btn btn-secondary btn-sm" id="dvCopy">📋 Copiar mensaje</button><button type="button" class="btn btn-primary btn-sm" id="dvWa">💬 Abrir WhatsApp</button></div>
+    <button type="button" class="text-btn" id="dvReset"${_dv.edited?"":" hidden"}>↺ Volver al mensaje sugerido</button>
+    <div id="dvPhone"></div>
+    <p class="dv-note">No se envía nada automáticamente. Abrir WhatsApp no demuestra que el mensaje se haya enviado: confirmalo vos después.</p>
+    <div id="dvSentAsk" class="dv-sentask" hidden>¿Ya lo enviaste? <button type="button" class="btn btn-secondary btn-sm" id="dvMarkSent">Sí, registrar como enviado</button></div>`;
 }
 const dvVersions=p=>{const root=p.versionOf||p.id; return state.proposals.filter(x=>(x.versionOf||x.id)===root).sort((a,b)=>(a.versionNo||1)-(b.versionNo||1));};
 function dvPaintAlt(){
-  const p=dvP(); if(!p) return; const multi=p.options.length>1, c=stuckContext(p);
-  $("#dvAltBody").innerHTML=`<p class="dv-hint">Crea una copia para ajustar alcance, precio o condiciones de pago. <b>La propuesta original no se modifica</b> y vos revisás todo antes de enviarla.</p>
-    <div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" data-dv-alt="copy">Copiar la propuesta completa</button>${multi?`<button type="button" class="btn btn-secondary btn-sm" data-dv-alt="cheapest">Solo con la opción más económica (${escapeHtml(c.cheapest.name)})</button>`:""}</div>`;
+  const p=dvP(); if(!p) return; const multi=p.options.length>1, c=dvCtx(p), ch=[...p.options].sort((a,b)=>finalPrice(a)-finalPrice(b))[0];
+  $("#dvAltBody").innerHTML=`<p class="dv-hint">Crea una copia para ajustar alcance, precio o condiciones de pago. <b>La propuesta original no se modifica</b> y vos revisás todo antes de enviarla. No se aplica ningún descuento automático.</p>
+    <div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" data-dv-alt="copy">Copiar la propuesta completa</button>${multi?`<button type="button" class="btn btn-secondary btn-sm" data-dv-alt="cheapest">Solo con la opción más económica (${escapeHtml(ch.name)})</button>`:""}</div>`;
 }
 function dvPaintNext(){
-  const p=dvP(); if(!p) return; const e=escapeHtml, f=getFollow(p), n=f.next;
+  const p=dvP(); if(!p) return; const e=escapeHtml, f=getFollow(p), n=f.next, r=openResponses(p).find(x=>x.kind==="later"&&x.laterDate);
+  const val=(n&&n.date)||(r&&r.laterDate)||"";
   $("#dvNextBody").innerHTML=`${n&&n.date?`<div class="dv-sched"><b>Programado: ${e(fmtDate(n.date))}</b> · ${e(n.action||"Seguimiento")}${n.note?` · ${e(n.note)}`:""}<div class="dv-btns"><button type="button" class="btn btn-secondary btn-sm" id="dvNextDone">Marcar como hecho</button><button type="button" class="text-btn" id="dvNextClear">Quitar</button></div></div>`:""}
-    <form id="dvNextForm" class="dv-form" novalidate><label>Fecha<input type="date" id="dvNextDate" min="${isoDate(Date.now())}" value="${e((n&&n.date)||"")}"></label>
+    ${r&&!n?`<p class="dv-hint">El cliente pidió retomarlo alrededor del ${e(fmtDate(r.laterDate))}. Programalo para no olvidarte.</p>`:""}
+    <form id="dvNextForm" class="dv-form" novalidate><label>Fecha<input type="date" id="dvNextDate" min="${isoDate(Date.now())}" value="${e(val)}"></label>
       <label>Próxima acción<select id="dvNextAct">${["Escribirle por WhatsApp","Llamarlo/a","Enviar una alternativa","Revisar la propuesta","Otra"].map(a=>`<option${n&&n.action===a?" selected":""}>${a}</option>`).join("")}</select></label>
       <label>Nota<input id="dvNextNote" maxlength="140" placeholder="Ej: me pidió que lo llame el viernes" value="${e((n&&n.note)||"")}"></label>
       <p class="imp-err" id="dvNextErr" role="alert" hidden></p><button type="submit" class="btn btn-primary btn-sm">Guardar seguimiento</button></form>`;
 }
 function dvPaintRes(){
-  const p=dvP(); if(!p) return; const cur=getFollow(p).stage;
-  $("#dvResBody").innerHTML=`<p class="dv-hint">Registrá en qué quedó. Esto es tu seguimiento: <b>no cambia</b> el estado real de la propuesta salvo «Perdida», que usa el flujo de siempre.</p>
-    <div class="dv-stages">${FOLLOW_STAGES.map(([k,l])=>`<button type="button" class="dv-stage-btn${cur===k?" on":""}" data-dv-stage="${k}" aria-pressed="${cur===k}">${escapeHtml(l)}</button>`).join("")}</div>`;
+  const p=dvP(); if(!p) return; const cur=stageOf(p), row=OUTCOMES.find(x=>x[0]===cur);
+  $("#dvResBody").innerHTML=`<p class="dv-hint">Registrá en qué quedó. Es tu seguimiento: <b>no cambia</b> el estado real de la propuesta (aceptada, seña cobrada) salvo «Perdida», que usa el flujo de siempre.</p>
+    <div class="dv-stages">${OUTCOMES.map(([k,l])=>`<button type="button" class="dv-stage-btn${cur===k?" on":""}" data-dv-stage="${k}" aria-pressed="${cur===k}">${escapeHtml(l)}</button>`).join("")}</div>
+    ${row?`<p class="dv-next-out"><b>Próximo paso:</b> ${escapeHtml(OUTCOME_NEXT[cur])}</p>`:'<p class="dv-hint">Todavía no registraste un resultado.</p>'}
+    <button type="button" class="text-btn" data-dv-lost="${escapeHtml(p.id)}">Marcar como perdida…</button>`;
 }
 function dvPaintHist(){
   const p=dvP(); if(!p) return; const e=escapeHtml, h=getFollow(p).history.slice().reverse().slice(0,25), vs=dvVersions(p);
   $("#dvHistBody").innerHTML=`${vs.length>1?`<h5>Versiones</h5><ul class="dv-vers">${vs.map(v=>{const base=finalPrice(chosenOf(vs[0])), cur=finalPrice(chosenOf(v)), d=base?Math.round(100*(cur-base)/base):0;
       return `<li><b>${(v.versionNo||1)===1?"Original":`Alternativa v${v.versionNo}`}</b> · ${e(v.title)} · ${money(cur)}${v.id!==vs[0].id&&d?` (${d>0?"+":""}${d}% vs. original)`:""} · ${statusLabel(v.status)} <button type="button" class="text-btn" data-dv-ver="${e(v.id)}">Ver</button></li>`;}).join("")}</ul>`:""}
-    <h5>Acciones registradas</h5>${h.length?`<ol class="dv-hist">${h.map(x=>`<li><span>${e(x.text)}</span><small>${relativeTime(x.at)}</small></li>`).join("")}</ol>`:'<p class="dv-hint">Todavía no hay acciones registradas.</p>'}
+    <h5>Acciones registradas</h5>${h.length?`<ol class="dv-hist">${h.map(x=>`<li><span>${e(x.text)}${x.by?` <i>· ${e(x.by)}</i>`:""}</span><small>${relativeTime(x.at)}</small></li>`).join("")}</ol>`:'<p class="dv-hint">Todavía no hay acciones registradas.</p>'}
     <button type="button" class="text-btn" data-dv-full="${e(p.id)}">Ver actividad completa del cliente</button>`;
 }
 
 /* ---- acciones ---- */
-async function dvSetReason(id,declared){
-  const p=dvP(); if(!p) return;
-  if(_dv.edited&&_dv.msg.trim()&&id!==_dv.reason&&!confirm("Cambiar el motivo reemplaza el mensaje que editaste. ¿Seguir?")) return;
-  const changed=id!==_dv.reason; _dv.reason=id; _dv.edited=false;
-  if(declared) _dv.source="client_declared"; else if(changed) _dv.source=dvSuggested(p,id);
-  const f=getFollow(p); f.reason={id,source:_dv.source,at:new Date().toISOString()};
-  logFollow(p,"reason",`Motivo: ${reasonOf(id).title} (${FOLLOW_SOURCES[_dv.source]}).`);
-  dvPaintReasons(); dvPaintAct(); dvPaintHist(); dvPaintOpp();
-  await saveFollow(p); dvPaintWarn();
+async function dvSetDiag(id,source){
+  const p=dvP(); if(!p||!DIAGS[id]) return; const f=getFollow(p), prev=f.reason&&f.reason.id;
+  if(_dv.edited&&_dv.msg.trim()&&!confirm("Cambiar el diagnóstico reemplaza el mensaje que editaste. ¿Seguir?")) return;
+  _dv.edited=false; const src=source||(prev===id&&f.reason?f.reason.source:"seller_assumption");
+  f.reason={id,source:src,at:new Date().toISOString()};
+  logFollow(p,"reason",`Diagnóstico: ${DIAGS[id].title} (${DIAG_SOURCES[src]}).`);
+  dvPaintDiag(); dvPaintReco(); dvPaintMsg(); dvPaintCtx(); dvPaintHist(); await saveFollow(p); dvPaintWarn();
+}
+async function dvConfirmDiag(){
+  const p=dvP(), eff=effectiveDiag(p), src=$("#dvSource")?$("#dvSource").value:"seller_confirmed";
+  return dvSetDiag(eff.id,DIAG_SOURCES[src]?src:"seller_confirmed");
 }
 async function dvSetSource(v){
-  const p=dvP(); if(!p||!FOLLOW_SOURCES[v]) return; _dv.source=v; const f=getFollow(p);
-  if(f.reason) f.reason.source=v; logFollow(p,"reason",`Origen del motivo: ${FOLLOW_SOURCES[v]}.`);
-  dvPaintHist(); await saveFollow(p); dvPaintWarn();
+  const p=dvP(); if(!p||!DIAG_SOURCES[v]) return; const f=getFollow(p), eff=effectiveDiag(p);
+  f.reason={id:eff.id,source:v,at:new Date().toISOString()}; _dv.edited=false;
+  logFollow(p,"reason",`Origen del diagnóstico: ${DIAG_SOURCES[v]}.`);
+  dvPaintDiag(); dvPaintMsg(); dvPaintHist(); await saveFollow(p); dvPaintWarn();
+}
+async function dvSaveContext(){
+  const p=dvP(), v=$("#dvContext").value.trim().slice(0,500), f=getFollow(p);
+  if(v) f.context=v; else delete f.context; logFollow(p,"note",v?"Agregaste contexto al diagnóstico.":"Quitaste el contexto del diagnóstico.");
+  dvPaintDiag(); dvPaintHist(); await saveFollow(p); dvPaintWarn(); toast("Contexto guardado ✔");
+}
+async function dvAnswer(rid){
+  const p=dvP(), r=getResponses(p).find(x=>x.id===rid); if(!r) return;
+  r.answeredAt=new Date().toISOString();
+  if(Cloud.on){try{const sb=await Auth.client(); const {error}=await sb.from("proposal_responses").update({answered_at:r.answeredAt}).eq("id",rid); if(error) throw error;}catch(e){r.answeredAt=null; return toast("No se pudo marcar como respondida. Probá de nuevo.");}}
+  logFollow(p,"answered",`Marcaste como respondida: «${respKind(r.kind).label}».`); saveState();
+  dvPaintCtx(); dvPaintDiag(); dvPaintReco(); dvPaintMsg(); dvPaintHist(); await saveFollow(p); renderDashboard(); dvPaintWarn();
 }
 async function dvCopy(){
-  const p=dvP(), t=_dv.msg.trim(); if(!t) return toast("Elegí un motivo para generar el mensaje.");
+  const p=dvP(), t=_dv.msg.trim(); if(!t) return toast("No hay mensaje para copiar.");
   try{await navigator.clipboard.writeText(t); toast("Mensaje copiado ✔");}catch(err){window.prompt("Copiá el mensaje:",t);}
-  logFollow(p,"copied","Mensaje copiado (todavía sin enviar)."); dvPaintHist(); dvPaintOpp(); await saveFollow(p); dvPaintWarn();
+  logFollow(p,"copied","Mensaje preparado y copiado (sin confirmar el envío)."); dvPaintHist(); dvPaintCtx(); await saveFollow(p); dvPaintWarn();
 }
 function dvWhatsApp(){
-  const p=dvP(), t=_dv.msg.trim(); if(!t) return toast("Elegí un motivo para generar el mensaje.");
-  const ph=waPhone(p.client.phone);
-  if(!ph){dvPhoneFix(); return;}
+  const p=dvP(), t=_dv.msg.trim(); if(!t) return toast("No hay mensaje para enviar.");
+  const ph=waPhone(p.client.phone); if(!ph){dvPhoneFix(); return;}
   window.open(`https://wa.me/${ph}?text=${encodeURIComponent(t)}`,"_blank","noopener");
-  logFollow(p,"whatsapp","Abriste WhatsApp con el mensaje (no se confirma que lo hayas enviado)."); $("#dvSentAsk").hidden=false;
-  dvPaintHist(); dvPaintOpp(); saveFollow(p).then(dvPaintWarn);
+  logFollow(p,"whatsapp","Mensaje preparado y WhatsApp abierto (sin confirmar el envío)."); $("#dvSentAsk").hidden=false;
+  dvPaintHist(); dvPaintCtx(); saveFollow(p).then(dvPaintWarn);
 }
 function dvPhoneFix(msg){
   const p=dvP(), e=escapeHtml;
@@ -2860,7 +3037,7 @@ async function dvSavePhone(){
   if(!waPhone(v)) return dvPhoneFix("Ese número no parece válido (10 dígitos con código de área, o con código de país).");
   const prev=p.client.phone; p.client.phone=v;
   if(Cloud.on){
-    try{ if(!p.client_id) throw new Error("sin cliente"); const sb=await Auth.client(); const {error}=await sb.from("clients").update({phone:v}).eq("id",p.client_id); if(error) throw error; }
+    try{if(!p.client_id) throw new Error("sin cliente"); const sb=await Auth.client(); const {error}=await sb.from("clients").update({phone:v}).eq("id",p.client_id); if(error) throw error;}
     catch(err){p.client.phone=prev; return dvPhoneFix("No se pudo guardar el teléfono. Revisá tu conexión e intentá de nuevo.");}
   }else{const c=(state.clients||[]).find(x=>x.phone===prev&&x.name===p.client.name); if(c) c.phone=v; saveState();}
   $("#dvPhone").innerHTML=""; toast("Teléfono guardado ✔. Tocá «Abrir WhatsApp» de nuevo.");
@@ -2869,9 +3046,8 @@ async function dvMarkSent(){
   const p=dvP(); if(!p) return; const btn=$("#dvMarkSent"); if(btn) btn.disabled=true;
   if(Cloud.on){try{await Cloud.rpc("record_follow_up",{p_id:p.id});}catch(e){if(p.status!=="accepted"&&p.status!=="lost"){if(btn) btn.disabled=false; return toast(e.message||"No se pudo registrar el envío.");}}}
   p.followUps=(p.followUps||0)+1; p.lastFollowUpAt=Date.now(); p.remindAt=null;
-  const f=getFollow(p); if(!["accepted","confirmed"].includes(f.stage)) f.stage="message_sent";
   logFollow(p,"sent","Registraste el mensaje como enviado."); state.activity.unshift({icon:"🔔",text:`Seguimiento enviado a ${p.client.name}.`,time:"Ahora"});
-  $("#dvSentAsk").hidden=true; dvPaintTop(); dvPaintOpp(); dvPaintRes(); dvPaintHist();
+  $("#dvSentAsk").hidden=true; dvPaintTop(); dvPaintCtx(); dvPaintHist();
   await saveFollow(p); saveState(); renderDashboard(); dvPaintWarn();
 }
 async function dvSaveNext(ev){
@@ -2880,48 +3056,64 @@ async function dvSaveNext(ev){
   err.hidden=true; const f=getFollow(p);
   f.next={date,action:$("#dvNextAct").value,note:$("#dvNextNote").value.trim().slice(0,140)};
   logFollow(p,"scheduled",`Seguimiento programado para el ${fmtDate(date)}: ${f.next.action}${f.next.note?` (${f.next.note})`:""}.`);
-  dvPaintNext(); dvPaintOpp(); dvPaintHist(); await saveFollow(p); renderDashboard(); dvPaintWarn(); toast("Seguimiento programado ✔");
+  dvPaintNext(); dvPaintCtx(); dvPaintHist(); await saveFollow(p); renderDashboard(); dvPaintWarn(); toast("Seguimiento programado ✔");
 }
 async function dvNextClose(done){
   const p=dvP(), f=getFollow(p); if(!f.next) return;
   logFollow(p,"scheduled",done?"Seguimiento programado marcado como hecho.":"Quitaste el seguimiento programado.");
-  delete f.next; dvPaintNext(); dvPaintOpp(); dvPaintHist(); await saveFollow(p); renderDashboard(); dvPaintWarn();
+  delete f.next; dvPaintNext(); dvPaintCtx(); dvPaintHist(); await saveFollow(p); renderDashboard(); dvPaintWarn();
 }
 async function dvSetStage(k){
-  const p=dvP(); if(!p) return; const row=FOLLOW_STAGES.find(x=>x[0]===k); if(!row) return;
-  if(k==="lost"){closeModal("toolModal"); return openLost(p.id);}
-  if(k==="confirmed"&&p.status!=="accepted"&&!confirm("El cliente todavía no aceptó la propuesta en el link. ¿Registrar igual como venta confirmada por otro medio?")) return;
+  const p=dvP(); if(!p) return; const row=OUTCOMES.find(x=>x[0]===k); if(!row) return;
+  if(k==="deposit_confirmed"&&!p.depositPaidAt&&!confirm("Todavía no confirmaste la seña en CierraClick. Una reserva se confirma con evidencia (por ejemplo, la transferencia acreditada). ¿Registrarla igual?")) return;
+  if(k==="sale_closed"&&p.status!=="accepted"&&!confirm("El cliente todavía no aceptó la propuesta en el link. ¿Registrar igual la venta como cerrada por otro medio?")) return;
+  if(k==="declined"&&!confirm("Vas a registrar que el cliente no desea continuar. Dejará de aparecer en tus seguimientos. ¿Seguir?")) return;
   getFollow(p).stage=k; logFollow(p,"stage",`Resultado registrado: ${row[1]}.`);
-  dvPaintTop(); dvPaintOpp(); dvPaintRes(); dvPaintHist(); await saveFollow(p); renderDashboard(); dvPaintWarn();
+  dvPaintTop(); dvPaintCtx(); dvPaintDiag(); dvPaintReco(); dvPaintMsg(); dvPaintRes(); dvPaintHist();
+  if(k==="later"){$("#dvNext").open=true; dvPaintNext();}
+  await saveFollow(p); renderDashboard(); dvPaintWarn();
+}
+function dvAction(k){
+  const p=dvP();
+  if(k==="msg"){const m=$("#dvMsg"); if(m){m.scrollIntoView({block:"center"}); m.focus();} return;}
+  if(k==="alt"){$("#dvAlt").open=true; $("#dvAlt").scrollIntoView({block:"nearest"}); return;}
+  if(k==="improve"){closeModal("toolModal"); return openImprove(p.id);}
+  if(k==="schedule"){$("#dvNext").open=true; $("#dvNextDate").focus(); return;}
+  if(k==="paid"){closeModal("toolModal"); return markPaid(p.id);}
+  if(k==="result"){$("#dvRes").open=true; $("#dvRes").scrollIntoView({block:"nearest"});}
 }
 function dvBind(root){
   root.addEventListener("click",ev=>{
     const T=ev.target.closest?ev.target:null; if(!T) return;
-    const r=T.closest("[data-dv-reason]"); if(r) return dvSetReason(r.dataset.dvReason,!!r.dataset.dvDeclared);
+    const d=T.closest("[data-dv-diag]"); if(d) return dvSetDiag(d.dataset.dvDiag);
+    if(T.closest("#dvConfirm")) return dvConfirmDiag();
+    if(T.closest("#dvCtxSave")) return dvSaveContext();
     if(T.closest("#dvCopy")) return dvCopy();
     if(T.closest("#dvWa")) return dvWhatsApp();
     if(T.closest("#dvEdit")){const m=$("#dvMsg"); m.focus(); m.setSelectionRange(m.value.length,m.value.length); return;}
-    if(T.closest("#dvReset")){_dv.edited=false; return dvPaintAct();}
+    if(T.closest("#dvRegen")){ if(_dv.edited&&!confirm("Regenerar reemplaza el mensaje que editaste. ¿Seguir?")) return; _dv.variant++; _dv.edited=false; return dvPaintMsg();}
+    if(T.closest("#dvReset")){_dv.edited=false; return dvPaintMsg();}
     if(T.closest("#dvMarkSent")) return dvMarkSent();
     if(T.closest("#dvSavePhone")) return dvSavePhone();
     if(T.closest("#dvNextDone")) return dvNextClose(true);
     if(T.closest("#dvNextClear")) return dvNextClose(false);
     if(T.closest("#dvRetry")){const p=dvP(); return saveFollow(p).then(()=>dvPaintWarn());}
-    const a=T.closest("[data-dv-act]");
-    if(a){const k=a.dataset.dvAct, p=dvP();
-      if(k==="alt"){$("#dvAlt").open=true; $("#dvAlt").scrollIntoView({block:"nearest"}); return;}
-      if(k==="improve"){closeModal("toolModal"); return openImprove(p.id);}
-      if(k==="schedule"){$("#dvNext").open=true; $("#dvNextDate").focus(); return;}}
+    const k=T.closest("[data-dv-k]"); if(k) return dvAction(k.dataset.dvK);
     const alt=T.closest("[data-dv-alt]"); if(alt) return prepareAlternative(_dv.id,alt.dataset.dvAlt);
     const st=T.closest("[data-dv-stage]"); if(st) return dvSetStage(st.dataset.dvStage);
-    const run=T.closest("[data-dv-run]"); if(run){const id=_dv.id; closeModal("toolModal"); return runNext(id,run.dataset.dvRun);}
+    const ans=T.closest("[data-dv-ans]"); if(ans) return dvAnswer(ans.dataset.dvAns);
+    const lost=T.closest("[data-dv-lost]"); if(lost){closeModal("toolModal"); return openLost(lost.dataset.dvLost);}
     const ver=T.closest("[data-dv-ver]"); if(ver){const id=ver.dataset.dvVer; closeModal("toolModal"); return openPublic(id,true);}
     const full=T.closest("[data-dv-full]"); if(full) return openHistory(full.dataset.dvFull);
   });
   root.addEventListener("input",ev=>{if(ev.target.id==="dvMsg"){_dv.msg=ev.target.value; _dv.edited=true; const rs=$("#dvReset"); if(rs) rs.hidden=false;}});
   root.addEventListener("change",ev=>{
-    if(ev.target.id==="dvSource") dvSetSource(ev.target.value);
-    if(ev.target.id==="dvLink"){_dv.link=ev.target.checked; if(_dv.edited) toast("Editaste el mensaje: agregá o quitá el link a mano."); else dvPaintAct();}
+    if(ev.target.id==="dvSource") return dvSetSource(ev.target.value);
+    if(ev.target.id==="dvLink"){_dv.link=ev.target.checked; if(_dv.edited) toast("Editaste el mensaje: agregá o quitá el link a mano."); else dvPaintMsg(); return;}
+    if(ev.target.dataset&&ev.target.dataset.dvTone){
+      if(_dv.edited&&!confirm("Cambiar el tono reemplaza el mensaje que editaste. ¿Seguir?")){dvPaintMsg(); return;}
+      _dv.tone=ev.target.dataset.dvTone; _dv.edited=false; const p=dvP(); getFollow(p).tone=_dv.tone; dvPaintMsg(); saveFollow(p).then(dvPaintWarn);
+    }
   });
   root.addEventListener("submit",ev=>{if(ev.target.id==="dvNextForm") dvSaveNext(ev);});
 }
@@ -2941,7 +3133,7 @@ function prepareAlternative(id,mode){
     const ch=[...p.options].sort((a,b)=>finalPrice(a)-finalPrice(b))[0], {id:_x,...rest}=ch;
     builderOptions=[newOption({...rest,recommended:true,_open:true})]; renderOptionEditors();
   }
-  renderBuilderPreview(); updateAltBanner();
+  renderBuilderPreview(); updateAltBanner(); wizPrefilled(2);
   toast("Borrador de alternativa: la original no se modifica. Revisá y creala cuando estés conforme.");
 }
 function updateAltBanner(){
@@ -2955,6 +3147,7 @@ function updateAltBanner(){
   b.innerHTML=`<b>🧩 Alternativa de «${escapeHtml(orig.title)}»</b><span>Original: <b>${money(oTot)}</b> · ${orig.options.length} ${orig.options.length===1?"opción":"opciones"} · ${(orig.includes||[]).length} incluido${(orig.includes||[]).length===1?"":"s"}</span><span>Esta alternativa: <b>${cur?money(nTot):"—"}</b> · ${nOpts.length} ${nOpts.length===1?"opción":"opciones"} · ${lines($("#includes")&&$("#includes").value)} incluido${lines($("#includes")&&$("#includes").value)===1?"":"s"}${cur&&oTot?` · <b>${d>0?"+":""}${d}%</b> frente a la original`:""}</span>${cur&&nTot<oTot?"<small>Revisá que el nuevo importe te siga dejando margen: la app no conoce tus costos.</small>":""}`;
 }
 async function linkVersion(pid){
+  onProposalCreated();
   const oid=builderAltOf; if(!oid) return; builderAltOf=null;
   const orig=state.proposals.find(x=>x.id===oid), np=state.proposals.find(x=>x.id===pid); if(!orig||!np) return;
   const root=orig.versionOf||orig.id, n=Math.max(1,...state.proposals.filter(x=>(x.versionOf||x.id)===root).map(x=>x.versionNo||1))+1;
@@ -2987,7 +3180,6 @@ function humanOnce(fn){
 }
 
 /* ---- vista pública: piezas nuevas ---- */
-const introText=p=>p.options.length>1?`Armé ${p.options.length} opciones para que compares y elijas la que mejor se adapte a lo que necesitás.`:"Acá tenés el detalle de lo que te propongo, para que lo revises con tranquilidad.";
 function contactChip(){
   const d=normalizePhone(state.business.whatsapp); if(!d) return "";
   return `<div class="contact-chip">📱 <a href="https://wa.me/${d}" target="_blank" rel="noopener">WhatsApp ${escapeHtml(d)}</a></div>`;
@@ -3009,10 +3201,8 @@ function detailsMarkup(p){
   return `<div class="acc-group">${out.join("")}</div>${afterMarkup(p)}`;
 }
 function consultMarkup(p){
-  return `<section class="consult" data-sec="consulta"><h4>¿Tenés alguna duda antes de decidir?</h4><p>Podés consultarme sin aceptar nada.</p>
-    <a class="btn btn-secondary consult-wa" id="publicWhatsapp" href="#" target="_blank" rel="noopener">💬 Consultar por WhatsApp</a>
-    <button type="button" class="text-btn" id="doubtBtn">Elegir el tema de mi duda</button>
-    <div class="doubt-panel" id="doubtPanel" hidden><b>¿Qué te frena? Te respondo por WhatsApp</b><div class="doubt-chips">${["Precio","Forma de pago","Plazo o fecha","Otra consulta"].map(d=>`<a class="chip-link" data-doubt="${d}" target="_blank" rel="noopener" href="#">${d}</a>`).join("")}</div></div></section>`;
+  return `<section class="consult" data-sec="consulta"><h4>¿Preferís hablarlo por WhatsApp?</h4><p>Podés consultarme sin aceptar nada.</p>
+    <a class="btn btn-secondary consult-wa" id="publicWhatsapp" href="#" target="_blank" rel="noopener">💬 Consultar por WhatsApp</a></section>`;
 }
 function statusTrackMarkup(p,dep,paid){
   const s=[["Opción seleccionada","done"],["Propuesta aceptada","done"]];
@@ -3020,3 +3210,263 @@ function statusTrackMarkup(p,dep,paid){
   else s.push(["Pago a coordinar con el negocio","todo"]);
   return `<ol class="status-track" aria-label="Estado de tu propuesta">${s.map(([t,k])=>`<li class="${k}"><span aria-hidden="true">${k==="done"?"✔":k==="wait"?"…":"○"}</span>${escapeHtml(t)}</li>`).join("")}</ol>`;
 }
+
+/* ===== v40 (parte 2): «¿Qué te falta para decidir?», encabezado, asistente de 3 pasos, estados vacíos y métricas ===== */
+const hash32=s=>{let h=5381; s=String(s); for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))|0; return (h>>>0).toString(36);};
+
+/* ---- 1) Encabezado: asesor y presentación variable ---- */
+function introText(p){
+  const multi=p.options.length>1;
+  const A=multi?[
+    "Preparamos esta propuesta pensando en lo que necesitás. Acá podés revisar los detalles, comparar las opciones y elegir cómo querés avanzar.",
+    "Armamos estas opciones para vos. Revisalas con calma y, si algo no te cierra, preguntanos antes de decidir.",
+    "Acá tenés las alternativas con todo el detalle. Compará, tomate el tiempo que necesites y avisanos si querés ajustar algo."
+  ]:[
+    "Preparamos esta propuesta pensando en lo que necesitás. Acá podés revisar los detalles y elegir cómo querés avanzar.",
+    "Armamos esta propuesta para vos. Revisala con calma y, si algo no te cierra, preguntanos antes de decidir.",
+    "Acá tenés la propuesta con todo el detalle. Tomate el tiempo que necesites y avisanos si querés ajustar algo."];
+  const t=A[parseInt(hash32(p.id),36)%A.length];
+  return t;
+}
+const advisorLine=()=>{const a=profileOf(state.business&&state.business.profile).advisor; return a?`<div class="advisor-line">Te atiende <b>${escapeHtml(a)}</b></div>`:"";};
+
+/* ---- 2) «¿Qué te falta para decidir?» (lo que ve el cliente) ---- */
+const needStored=pid=>{try{return JSON.parse(localStorage.getItem("cc_need_"+pid)||"null");}catch(e){return null;}};
+function needMarkup(p){
+  if(!["sent","viewed"].includes(p.status)) return "";
+  const st=needStored(p.id), e=escapeHtml;
+  return `<section class="need" id="needBox" data-pid="${e(p.id)}" data-sec="necesito" aria-labelledby="needH">
+    <h4 id="needH">¿Qué te falta para decidir?</h4>
+    <p>Queremos ayudarte a encontrar la opción que mejor se adapte a vos. Elegí lo que necesitás y te ayudamos con el próximo paso.</p>
+    ${st?`<p class="need-done" role="status">✅ Ya registramos tu respuesta («${e(respKind(st.kind).label)}»). Si querés agregar algo, elegí otra opción.</p>`:""}
+    <div class="need-opts" role="radiogroup" aria-labelledby="needH">${RESP_KINDS.map(k=>`<button type="button" class="need-opt" role="radio" aria-checked="false" data-need="${k.id}">${e(k.label)}</button>`).join("")}</div>
+    <div id="needFlow" aria-live="polite"></div>
+    <small class="need-hint">Es opcional: podés revisar toda la propuesta sin responder.</small></section>`;
+}
+function needFlowMarkup(p,kind){
+  const e=escapeHtml, biz=e(state.business.name||"el negocio"), fld=(id,label,ph,req)=>`<label class="need-f">${label}${req?"":" <small>(opcional)</small>"}<textarea id="${id}" rows="3" maxlength="400" placeholder="${ph}"></textarea></label>`;
+  const bits=[]; const methods=(p.payments||[]).map(k=>PAY[k]).filter(Boolean); if(methods.length) bits.push(methods.join(", "));
+  const insts=Math.max(0,...p.options.filter(x=>x.hasInstallments&&x.installments>1).map(x=>x.installments)); if(insts>1) bits.push(`hasta ${insts} cuotas`);
+  if(p.depositPct>0) bits.push(`seña del ${p.depositPct}%`);
+  const send=`<p class="imp-err" id="needErr" role="alert" hidden></p><button type="submit" class="btn btn-primary btn-sm" id="needSend">Enviar</button>`;
+  const body={
+    price:`<fieldset class="need-f"><legend>¿Qué parte te preocupa?</legend>${Object.entries(ASPECTS).map(([k,l],i)=>`<label class="need-r"><input type="radio" name="needAspect" value="${k}"${i===0?" checked":""}> ${e(l[0].toUpperCase()+l.slice(1))}</label>`).join("")}</fieldset>${fld("needDetail","Si querés, contanos un poco más","Ej: me gustaría una entrega inicial menor")}<p class="need-note">Con esto ${biz} revisa tu caso. No se aplica ningún descuento automático.</p>`,
+    payment:`${bits.length?`<p class="need-note">Hoy la propuesta contempla: ${e(bits.join("; "))}.</p>`:""}${fld("needDetail","¿Qué forma de pago te vendría mejor?","Ej: pagar en más cuotas")}`,
+    includes:fld("needDetail","¿Qué te gustaría saber?","Escribí tu pregunta",true),
+    compare:`<div class="need-actions"><button type="button" class="btn btn-secondary btn-sm" data-need-go="compare">Ver las opciones</button></div>${fld("needDetail","¿Qué es lo más importante para vos?","Ej: el plazo, el precio, la garantía")}`,
+    later:`<fieldset class="need-f"><legend>¿Cuándo te conviene que retomemos?</legend>${[["3","En unos 3 días"],["7","En una semana"],["14","En dos semanas"],["custom","Elegir una fecha"]].map(([v,l],i)=>`<label class="need-r"><input type="radio" name="needWhen" value="${v}"${i===1?" checked":""}> ${l}</label>`).join("")}<input type="date" id="needDate" min="${addDays(isoDate(Date.now()),1)}" max="${addDays(isoDate(Date.now()),365)}" aria-label="Fecha para retomar" hidden></fieldset>`,
+    other:fld("needDetail","Contanos qué necesitás","Escribilo con tus palabras",true)}[kind];
+  return `<form class="need-form" id="needForm" data-kind="${kind}" novalidate>${body}${send}</form>`;
+}
+const NEED_OK={
+  price:b=>`${b} va a revisar tu caso y te escribe. Mientras tanto podés seguir mirando la propuesta.`,
+  payment:b=>`${b} va a revisar las modalidades disponibles y te escribe.`,
+  includes:b=>`Te van a responder para que tengas todo claro antes de decidir.`,
+  compare:b=>`Podés mirar las opciones acá arriba; ${b} también puede ayudarte a compararlas.`,
+  later:(b,d)=>`Anotamos que preferís retomarlo${d?` alrededor del ${fmtDate(d)}`:" más adelante"}. Respetamos tu tiempo.`,
+  other:b=>`Gracias por contarnos. ${b} lo va a leer y te responde.`,
+  advance:b=>`Registramos que querés avanzar. Completá el último paso acá abajo para confirmarlo.`};
+async function submitNeed(pid,kind,data){
+  const key="k1-"+hash32(`${pid}|${kind}|${data.aspect||""}|${data.detail||""}|${data.later||""}`)+hash32(pid+kind);
+  if(Cloud.on){
+    await Cloud.pub("submit_proposal_response",{p_id:pid,p_kind:kind,p_aspect:data.aspect||"",p_detail:data.detail||"",p_later:data.later||null,p_key:key});
+  }else{
+    const p=state.proposals.find(x=>x.id===pid); if(!p) throw new Error("No encontramos la propuesta.");
+    const l=(p.responses=Array.isArray(p.responses)?p.responses:[]);
+    if(!l.some(r=>r.key===key)){
+      l.push({id:"resp-"+Math.random().toString(36).slice(2,9),kind,aspect:data.aspect||"",detail:data.detail||"",laterDate:data.later||"",at:new Date().toISOString(),key});
+      p.lastEvent=`El cliente respondió: ${respKind(kind).label}.`; state.activity.unshift({icon:"💬",text:`${p.client.name} respondió: ${respKind(kind).label}.`,time:"Ahora"}); saveState();
+    }
+  }
+  try{localStorage.setItem("cc_need_"+pid,JSON.stringify({kind,at:Date.now(),key}));}catch(e){}
+}
+document.addEventListener("click",ev=>{
+  const T=ev.target&&ev.target.closest?ev.target:null; if(!T) return;
+  const box=T.closest("#needBox"); if(!box) return;
+  const opt=T.closest("[data-need]");
+  if(opt){
+    const kind=opt.dataset.need, pid=box.dataset.pid, p=state.proposals.find(x=>x.id===pid);
+    box.querySelectorAll(".need-opt").forEach(b=>{const on=b===opt; b.setAttribute("aria-checked",on); b.classList.toggle("on",on);});
+    const flow=$("#needFlow");
+    if(kind==="advance"){
+      flow.innerHTML=`<p class="need-ok" role="status">✅ ${escapeHtml(NEED_OK.advance(state.business.name||"el negocio"))}</p>`;
+      submitNeed(pid,"advance",{}).catch(()=>{});
+      const ab=$("#acceptBtn"); if(ab){ab.click();} return;
+    }
+    flow.innerHTML=p?needFlowMarkup(p,kind):""; const f=flow.querySelector("textarea,input"); if(f) try{f.focus({preventScroll:true});}catch(e){} return;
+  }
+  if(T.closest("[data-need-go]")){const g=document.querySelector(".choice-grid,.cmp-box"); if(g) g.scrollIntoView({behavior:"smooth",block:"start"});}
+});
+document.addEventListener("change",ev=>{
+  if(ev.target&&ev.target.name==="needWhen"){const d=$("#needDate"); if(d){d.hidden=ev.target.value!=="custom"; if(!d.hidden) d.focus();}}
+});
+document.addEventListener("submit",async ev=>{
+  const form=ev.target; if(!form||form.id!=="needForm") return;
+  ev.preventDefault(); const box=form.closest("#needBox"), pid=box.dataset.pid, kind=form.dataset.kind, err=$("#needErr"), btn=$("#needSend");
+  const val=id=>{const el=form.querySelector("#"+id); return el?el.value.trim().slice(0,400):"";}, fail=m=>{err.textContent=m; err.hidden=false; return false;};
+  err.hidden=true; const data={detail:val("needDetail")};
+  if(kind==="price"){const r=form.querySelector('input[name="needAspect"]:checked'); data.aspect=r?r.value:"otro";}
+  if(kind==="includes"||kind==="other"){if(data.detail.length<3) return fail("Escribí unas palabras para que podamos ayudarte.");}
+  if(kind==="later"){
+    const w=form.querySelector('input[name="needWhen"]:checked').value;
+    if(w==="custom"){const d=$("#needDate").value, min=addDays(isoDate(Date.now()),1); if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||d<min) return fail("Elegí una fecha a partir de mañana."); data.later=d;}
+    else data.later=addDays(isoDate(Date.now()),Number(w));
+  }
+  btn.disabled=true; btn.textContent="Enviando…";
+  try{await submitNeed(pid,kind,data);}
+  catch(e){btn.disabled=false; btn.textContent="Enviar"; return fail(e&&e.message&&!/function|schema|fetch|network/i.test(e.message)?e.message:"No pudimos registrar tu respuesta ahora. Probá de nuevo en un rato o consultanos por WhatsApp. Tu texto sigue acá.");}
+  $("#needFlow").innerHTML=`<p class="need-ok" role="status">✅ Listo, registramos tu respuesta. ${escapeHtml(NEED_OK[kind](state.business.name||"El negocio",data.later))}</p>`;
+});
+
+/* ---- 3) Respuestas del cliente en el panel (nube) ---- */
+async function loadResponses(){
+  if(!(Cloud.on&&currentUser)) return;
+  try{
+    const sb=await Auth.client();
+    const {data,error}=await sb.from("proposal_responses").select("id,proposal_id,kind,aspect,detail,later_date,created_at,answered_at,client_key").order("created_at",{ascending:false}).limit(500);
+    if(error) throw error;
+    _resp={}; data.forEach(r=>{(_resp[r.proposal_id]=_resp[r.proposal_id]||[]).push({id:r.id,kind:r.kind,aspect:r.aspect||"",detail:r.detail||"",laterDate:r.later_date||"",at:r.created_at,answeredAt:r.answered_at||null,key:r.client_key});});
+    _respErr="";
+  }catch(e){_respErr=isTableMissing(e)?"missing":"error";}
+  renderDashboard();
+}
+
+/* ---- 4) Estados vacíos con una acción real ---- */
+const emptyState=(icon,title,text,btn,act)=>`<div class="empty-state"><span class="es-ic" aria-hidden="true">${icon}</span><h4>${escapeHtml(title)}</h4><p>${escapeHtml(text)}</p>${btn?`<button type="button" class="btn btn-primary btn-sm" data-empty="${act}">${escapeHtml(btn)}</button>`:""}</div>`;
+document.addEventListener("click",e=>{
+  const b=e.target&&e.target.closest?e.target.closest("[data-empty]"):null; if(!b) return;
+  if(b.dataset.empty==="new") openBuilder();
+});
+const EMPTY_FIRST=()=>emptyState("📝","Aún no creaste tu primera propuesta","Preparás una oferta personalizada y la compartís con tu cliente.","Crear primera propuesta","new");
+const EMPTY_TODAY=n=>n?emptyState("✅","Estás al día","Las oportunidades que necesiten una próxima acción aparecerán acá."):EMPTY_FIRST();
+const EMPTY_ACTIVITY=n=>emptyState("🕒","Todavía no hay actividad registrada","Cuando compartas propuestas, acá vas a ver su evolución.",n?"":"Crear primera propuesta","new");
+const EMPTY_CLIENTS=()=>emptyState("👥","Todavía no hay clientes","Se guardan solos cuando creás una propuesta.","Crear primera propuesta","new");
+const EMPTY_TABLE=()=>`<tr><td colspan="6">${EMPTY_FIRST()}</td></tr>`;
+const PERF_MIN=5;
+function perfEmptyPass(){
+  const n=(state.proposals||[]).length; if(n>=PERF_MIN) return;
+  ["perfViewed","perfAccepted","perfRecommended"].forEach(id=>{const el=$("#"+id); if(el) el.textContent="—";});
+  const sc=$("#perfScore"); if(sc) sc.textContent="—"; const bar=$("#perfBar"); if(bar) bar.style.width="0%";
+  const s=$("#perfSeñas"); if(s&&!n) s.textContent="—";
+  const a=$("#performanceAdvice"); if(a) a.textContent=n?`Todavía hay pocos datos para medir tu rendimiento: se necesitan al menos ${PERF_MIN} propuestas (hoy tenés ${n}). Mientras tanto, esto no significa un mal resultado.`:"Creá y compartí tu primera propuesta para empezar a ver tus indicadores.";
+}
+
+/* ---- 5) Métricas de recuperación (con fórmulas y mínimos) ---- */
+const REPLIED_STAGES=["replied","clarify","changes","payment_change","accepted","deposit_pending","deposit_confirmed","sale_closed","later"];
+function recoveryStats(){
+  const ps=state.proposals||[], R={n:ps.length};
+  R.opened=ps.filter(p=>(p.views||0)>0).length;
+  R.explicit=ps.filter(p=>getResponses(p).length||p.lastDoubt).length;
+  R.objections={}; ps.forEach(p=>{const d=effectiveDiag(p); if(d.closed||d.declined||!isConf(d)) return; R.objections[d.id]=(R.objections[d.id]||0)+1;});
+  R.prepared=ps.reduce((s,p)=>s+((p.follow&&p.follow.history)||[]).filter(h=>h.type==="copied"||h.type==="whatsapp").length,0);
+  R.sent=ps.reduce((s,p)=>s+(p.followUps||0),0);
+  R.fuBase=ps.filter(p=>(p.followUps||0)>0);
+  R.fuReplied=R.fuBase.filter(p=>p.status==="accepted"||REPLIED_STAGES.includes(stageOf(p))||getResponses(p).some(r=>new Date(r.at).getTime()>(p.lastFollowUpAt||0))).length;
+  R.accepted=ps.filter(p=>p.status==="accepted").length; R.deposits=ps.filter(p=>p.depositPaidAt).length;
+  R.closed=ps.filter(p=>p.depositPaidAt||stageOf(p)==="sale_closed").length; R.lost=ps.filter(p=>p.status==="lost").length;
+  try{const t=JSON.parse(localStorage.getItem("cc_buildtimes_"+((currentUser&&currentUser.id)||"demo"))||"[]").filter(x=>x>0).sort((a,b)=>a-b); R.build=t.length>=3?t[Math.floor(t.length/2)]:null; R.buildN=t.length;}catch(e){R.build=null;R.buildN=0;}
+  return R;
+}
+function recordBuildTime(){
+  const t=window._buildStart; window._buildStart=0; if(!t) return; const s=Math.max(1,Math.round((Date.now()-t)/1000)); if(s>7200) return;
+  const k="cc_buildtimes_"+((currentUser&&currentUser.id)||"demo");
+  try{const l=JSON.parse(localStorage.getItem(k)||"[]"); l.push(s); localStorage.setItem(k,JSON.stringify(l.slice(-20)));}catch(e){}
+}
+function renderRecovery(){
+  const box=$("#recoveryCard"); if(!box) return; const R=recoveryStats(), e=escapeHtml;
+  if(!R.n){box.innerHTML=`<div class="card-head"><h3>Recuperación de oportunidades</h3></div>${emptyState("📊","Todavía no hay datos suficientes","Cuando compartas propuestas y registres seguimientos, acá vas a ver qué objeciones aparecen y qué acciones funcionan.","Crear primera propuesta","new")}`; return;}
+  const pct=(a,b)=>b?`${Math.round(100*a/b)}%`:"—", row=(label,val,formula,need)=>`<div class="rec-row"><div><b>${e(label)}</b><small>${e(formula)}</small></div><strong>${need?`<span class="rec-need">${e(need)}</span>`:e(val)}</strong></div>`;
+  const obj=Object.entries(R.objections).sort((a,b)=>b[1]-a[1]);
+  box.innerHTML=`<div class="card-head"><h3>Recuperación de oportunidades</h3></div><div class="rec-grid">
+    ${row("Propuestas abiertas",`${R.opened} de ${R.n}`,"Con al menos una apertura humana ÷ propuestas creadas.","")}
+    ${row("Con respuesta explícita del cliente",`${R.explicit} de ${R.n}`,"Respondieron «¿Qué te falta para decidir?» o tocaron una duda ÷ propuestas creadas.","")}
+    ${row("Mensajes preparados / registrados como enviados",`${R.prepared} / ${R.sent}`,"Copiados o con WhatsApp abierto / confirmados por vos. Abrir WhatsApp no cuenta como envío.","")}
+    ${row("Respuestas tras un seguimiento",pct(R.fuReplied,R.fuBase.length),"Propuestas con resultado distinto de «Sin respuesta» ÷ propuestas con seguimiento enviado.",R.fuBase.length<3?`Faltan datos: hacen falta 3 propuestas con seguimiento enviado (hoy ${R.fuBase.length}).`:"")}
+    ${row("Aceptadas · señas confirmadas · ventas cerradas",`${R.accepted} · ${R.deposits} · ${R.closed}`,"Conteos reales; la reserva solo cuenta con seña confirmada.","")}
+    ${row("Tiempo típico para crear una propuesta",R.build?`${Math.floor(R.build/60)} min ${R.build%60} s`:"","Mediana de las últimas 20 creadas en este dispositivo.",R.build?"":`Faltan datos: hacen falta 3 propuestas creadas con el creador nuevo (hoy ${R.buildN}).`)}
+  </div>
+  <h4 class="rec-h">Objeciones confirmadas más frecuentes</h4>
+  ${obj.length?`<ul class="rec-obj">${obj.map(([id,c])=>`<li><span>${DIAGS[id].icon} ${e(DIAGS[id].title)}</span><b>${c}</b></li>`).join("")}</ul><small class="dv-hint">Solo cuentan las que dijo el cliente o confirmaste vos; las hipótesis no.</small>`:emptyState("🔎","Todavía no hay objeciones confirmadas","Aparecen cuando un cliente responde «¿Qué te falta para decidir?» o cuando confirmás un diagnóstico en «Destrabar venta».")}
+  <small class="dv-hint">Una mejora de diseño no se considera «ventas»: compará estos números a lo largo de varias semanas antes de sacar conclusiones.</small>`;
+}
+
+
+/* ===== v40 (parte 3): creador en 3 pasos con borrador automático ===== */
+var _wizStep=1, _wizNoDraft=false, _draftT=0;
+const DRAFT_KEY=()=>"cc_draft_"+((currentUser&&currentUser.id)||"demo");
+const DRAFT_FIELDS=["clientName","clientPhone","proposalTitle","proposalExpires","includes","excludes","deliveryTime","conditions","cashDiscount","depositPct","bonusText","bonusHours","slotsLeft","slotsLabel","holdHours"];
+const WIZ_LABELS=["Cliente","Oferta","Revisar y compartir"];
+function wizGo(n){
+  const f=$("#proposalForm"); if(!f) return; _wizStep=Math.max(1,Math.min(3,n)); f.dataset.step=String(_wizStep);
+  $$("#wizSteps li").forEach(li=>{const k=+li.dataset.wstep; li.classList.toggle("on",k===_wizStep); li.classList.toggle("done",k<_wizStep); if(k===_wizStep) li.setAttribute("aria-current","step"); else li.removeAttribute("aria-current");});
+  const lb=$("#wizLabel"); if(lb) lb.textContent=`Paso ${_wizStep} de 3 · ${WIZ_LABELS[_wizStep-1]}`;
+  if(_wizStep===3) renderBuilderPreview();
+  const d=$("#builderModal .modal-dialog"); if(d) d.scrollTop=0;
+}
+function wizPrefilled(step){_wizNoDraft=true; const b=$("#draftBanner"); if(b) b.remove(); wizGo(step||2);}
+function wizClearErrors(){$$("#proposalForm .field-err").forEach(x=>x.remove()); const s=$("#wizErr"); if(s){s.hidden=true; s.textContent="";}}
+function wizValidate(n){
+  wizClearErrors(); const errs=[];
+  if(n>=1){const ph=normalizePhone($("#clientPhone").value); if(ph.length<8||ph.length>15) errs.push(["clientPhone","Ingresá un WhatsApp válido, con código de área (ej: 3511234567)."]);}
+  if(n>=2){
+    if(!$("#proposalTitle").value.trim()) errs.push(["proposalTitle","Poné un título para la propuesta."]);
+    const exp=$("#proposalExpires").value; if(!/^\d{4}-\d{2}-\d{2}$/.test(exp)||exp<isoDate(Date.now())) errs.push(["proposalExpires","Elegí una fecha de vencimiento de hoy en adelante."]);
+    if(!builderOptions.some(o=>String(o.name||"").trim()&&Number(o.price)>0)) errs.push(["optionsList","Cargá al menos una opción con nombre y precio mayor a 0."]);
+  }
+  errs.forEach(([id,msg])=>{const el=$("#"+id); if(!el) return; const s=document.createElement("small"); s.className="field-err"; s.setAttribute("role","alert"); s.textContent=msg; el.insertAdjacentElement("afterend",s);});
+  if(errs.length){const s=$("#wizErr"); if(s){s.textContent=`Revisá ${errs.length===1?"un dato":errs.length+" datos"} antes de seguir.`; s.hidden=false;} const first=$("#"+errs[0][0]); if(first&&first.focus) try{first.focus();}catch(e){}}
+  return !errs.length;
+}
+document.addEventListener("click",ev=>{
+  const T=ev.target&&ev.target.closest?ev.target:null; if(!T||!T.closest("#builderModal")) return;
+  if(T.closest("#wizNext")){ if(wizValidate(_wizStep)) wizGo(_wizStep+1); return; }
+  if(T.closest("#wizBack")){ wizClearErrors(); wizGo(_wizStep-1); return; }
+  const g=T.closest("[data-wiz-go]"); if(g){wizClearErrors(); wizGo(+g.dataset.wizGo); return;}
+  if(T.closest("#draftUse")) return applyDraft();
+  if(T.closest("#draftDrop")){clearDraft(); const b=$("#draftBanner"); if(b) b.remove(); toast("Borrador descartado.");}
+});
+// El botón «Crear y compartir» solo existe en el paso 3, pero si alguien presiona Enter en un campo se valida igual.
+document.addEventListener("submit",ev=>{
+  if(!(ev.target&&ev.target.id==="proposalForm")) return;
+  if(_wizStep<3){ev.preventDefault(); ev.stopImmediatePropagation(); if(wizValidate(_wizStep)) wizGo(_wizStep+1); return;}
+  if(!wizValidate(3)){ev.preventDefault(); ev.stopImmediatePropagation(); wizGo(normalizePhone($("#clientPhone").value).length<8?1:2);}
+},true);
+
+/* ---- borrador automático (en este dispositivo) ---- */
+function draftData(){
+  const fields={}; DRAFT_FIELDS.forEach(id=>{const el=$("#"+id); if(el) fields[id]=el.value;});
+  return {at:Date.now(),step:_wizStep,kind:builderKind,pays:selectedPayments(),fields,options:builderOptions.map(({photo,photos,_open,...o})=>o)};
+}
+const draftHasContent=d=>!!d&&!!(String(d.fields.clientName||"").trim()||String(d.fields.clientPhone||"").trim()||(d.options||[]).some(o=>String(o.name||"").trim()||Number(o.price)>0));
+function saveDraft(){
+  if(_wizNoDraft||!currentUser) return; const st=$("#draftState"), d=draftData();
+  if(!draftHasContent(d)) return;
+  try{localStorage.setItem(DRAFT_KEY(),JSON.stringify(d)); if(st) st.textContent="Borrador guardado en este dispositivo ✓";}
+  catch(e){if(st) st.textContent="No se pudo guardar el borrador (sin espacio en el navegador).";}
+}
+function clearDraft(){try{localStorage.removeItem(DRAFT_KEY());}catch(e){} const st=$("#draftState"); if(st) st.textContent="";}
+function onProposalCreated(){recordBuildTime(); clearDraft();}
+function offerDraft(){
+  const f=$("#proposalForm"); if(!f) return; const old=$("#draftBanner"); if(old) old.remove();
+  let d=null; try{d=JSON.parse(localStorage.getItem(DRAFT_KEY())||"null");}catch(e){}
+  if(!draftHasContent(d)) return;
+  const b=document.createElement("div"); b.id="draftBanner"; b.className="draft-banner"; b.setAttribute("role","region"); b.setAttribute("aria-label","Borrador guardado");
+  b.innerHTML=`<span>📝 Tenés un borrador sin terminar (${relativeTime(new Date(d.at).toISOString())}). Las fotos y el audio no se guardan en los borradores.</span><span class="draft-btns"><button type="button" class="btn btn-secondary btn-sm" id="draftUse">Continuar</button><button type="button" class="text-btn" id="draftDrop">Descartar</button></span>`;
+  f.prepend(b);
+}
+function applyDraft(){
+  let d=null; try{d=JSON.parse(localStorage.getItem(DRAFT_KEY())||"null");}catch(e){} if(!d) return toast("No se pudo leer el borrador.");
+  builderKind=d.kind||"service"; $$('input[name="kind"]').forEach(r=>{r.checked=r.value===builderKind;});
+  DRAFT_FIELDS.forEach(id=>{const el=$("#"+id); if(el&&d.fields&&d.fields[id]!==undefined) el.value=d.fields[id];});
+  $$('input[name="pay"]').forEach(c=>{c.checked=(d.pays||[]).includes(c.value);});
+  builderOptions=(d.options&&d.options.length?d.options:[{}]).map(o=>newOption({...o,_open:true})); renderOptionEditors(); renderCatalog(); renderBuilderPreview();
+  const b=$("#draftBanner"); if(b) b.remove(); wizGo(d.step||1); toast("Borrador recuperado.");
+}
+document.addEventListener("input",e=>{
+  if(!(e.target&&e.target.closest&&e.target.closest("#proposalForm"))) return;
+  clearTimeout(_draftT); _draftT=setTimeout(saveDraft,700);
+});
+document.addEventListener("change",e=>{
+  if(!(e.target&&e.target.closest&&e.target.closest("#proposalForm"))) return;
+  clearTimeout(_draftT); _draftT=setTimeout(saveDraft,700);
+});
