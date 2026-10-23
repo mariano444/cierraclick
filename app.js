@@ -1466,7 +1466,7 @@ function bind(){
 
 
 /* ===== v23: bonus, cupos, mensaje de voz, "qué pasa después" y aceptación con nombre ===== */
-const VOICE_MAX=60;
+const VOICE_MAX=120, VOICE_BYTES=500*1024; // 2 minutos; 500 KB deja margen (≈ 2 fragmentos de 1 s) bajo el tope de 800.000 caracteres del audio ya codificado
 const OK_AUDIO=/^data:audio\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/;
 function safeAudio(u){return typeof u==="string"&&u.length<=800000&&OK_AUDIO.test(u)?u:"";}
 let builderVoice="", _voiceRec=null;
@@ -1519,7 +1519,7 @@ function perksText(p){
 }
 function voiceMarkup(p){
   const v=safeAudio(p.voice); if(!v) return "";
-  return `<div class="voice-box" data-sec="mensaje">${avatarHtml()}<div><b>Un mensaje de ${escapeHtml(state.business.name)} para vos</b>${voicePlayerHtml(v)}<small data-vp-len>Audio corto, hasta 1 minuto</small></div></div>`;
+  return `<div class="voice-box" data-sec="mensaje">${avatarHtml()}<div><b>Un mensaje de ${escapeHtml(state.business.name)} para vos</b>${voicePlayerHtml(v)}<small data-vp-len>Audio corto, hasta 2 minutos</small></div></div>`;
 }
 const DEFAULT_AFTER=[
   {t:"Reservás",d:"Confirmás tu lugar con la seña y te mostramos cómo pagarla.",w:""},
@@ -1579,7 +1579,7 @@ function blobToAudioUrl(blob){
       const type=((m&&m[1])||blob.type||"").toLowerCase().split(";")[0];
       if(!m||!type.startsWith("audio/")) return rej(new Error("Ese archivo no es un audio válido."));
       const url=`data:${type};base64,${m[2]}`;
-      safeAudio(url)?res(url):rej(new Error("El audio pesa demasiado. Probá con uno más corto."));
+      safeAudio(url)?res(url):rej(new Error("El audio pesa demasiado para guardarlo (máximo 600 KB). Grabá uno más corto o subí uno más liviano."));
     };
     r.onerror=()=>rej(new Error("No se pudo leer el audio."));
     r.readAsDataURL(blob);
@@ -1587,12 +1587,12 @@ function blobToAudioUrl(blob){
 }
 async function fileToVoice(file){
   if(!file.type.startsWith("audio/")) throw new Error("Elegí un archivo de audio.");
-  if(file.size>600*1024) throw new Error("El audio pesa demasiado. Probá con uno de hasta 60 segundos y más liviano (menos de 600 KB).");
+  if(file.size>600*1024) throw new Error("El audio pesa demasiado (máximo 600 KB). Probá con uno de hasta 2 minutos y más liviano.");
   const dur=await new Promise(res=>{
     const a=new Audio(), u=URL.createObjectURL(file), done=v=>{URL.revokeObjectURL(u);res(v);};
     a.preload="metadata"; a.onloadedmetadata=()=>done(a.duration); a.onerror=()=>done(NaN); setTimeout(()=>done(NaN),4000); a.src=u;
   });
-  if(isFinite(dur)&&dur>VOICE_MAX+.5) throw new Error("El audio dura más de 60 segundos.");
+  if(isFinite(dur)&&dur>VOICE_MAX+.5) throw new Error("El audio dura más de 2 minutos.");
   return blobToAudioUrl(file);
 }
 function renderVoiceField(msg){
@@ -1600,7 +1600,7 @@ function renderVoiceField(msg){
   const rec=!!_voiceRec, canRec=!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);
   el.innerHTML=`${builderVoice&&!rec?voicePlayerHtml(builderVoice):""}
     <div class="voice-actions">
-      ${canRec?(rec?`<button type="button" class="btn btn-secondary btn-sm" data-voice="stop">⏹ Detener (<span id="voiceSecs">0</span> s)</button>`:`<button type="button" class="btn btn-secondary btn-sm" data-voice="rec">🎙 ${builderVoice?"Grabar de nuevo":"Grabar mensaje"}</button>`):""}
+      ${canRec?(rec?`<button type="button" class="btn btn-secondary btn-sm" data-voice="stop">⏹ Detener (<span id="voiceSecs">0</span> / 120 s)</button>`:`<button type="button" class="btn btn-secondary btn-sm" data-voice="rec">🎙 ${builderVoice?"Grabar de nuevo":"Grabar mensaje"}</button>`):""}
       ${rec?"":`<label class="btn btn-secondary btn-sm voice-up">📎 Subir audio<input type="file" accept="audio/*" data-voice="file" hidden></label>`}
       ${builderVoice&&!rec?`<button type="button" class="text-btn" data-voice="del">Quitar</button>`:""}
     </div>
@@ -1608,19 +1608,23 @@ function renderVoiceField(msg){
 }
 async function startVoice(){
   try{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:{ideal:1},echoCancellation:true,noiseSuppression:true}}); // mono: archivos más livianos
     const mime=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t));
     const rec=new MediaRecorder(stream,{...(mime?{mimeType:mime}:{}),audioBitsPerSecond:24000});
-    const st={rec,stream,chunks:[],t0:Date.now(),timer:null,cancelled:false};
-    rec.ondataavailable=e=>{if(e.data&&e.data.size) st.chunks.push(e.data);};
+    const st={rec,stream,chunks:[],bytes:0,t0:Date.now(),timer:null,cancelled:false,note:""};
+    rec.ondataavailable=e=>{
+      if(e.data&&e.data.size){st.chunks.push(e.data); st.bytes+=e.data.size;}
+      // Si el navegador graba más pesado de lo previsto, se corta antes de que no entre y se avisa.
+      if(st.bytes>=VOICE_BYTES&&!st.sizeStop){st.sizeStop=true; st.note=`La grabación se detuvo en ${Math.floor((Date.now()-st.t0)/1000)} s al llegar al tamaño máximo. Podés usarla así o grabar una más corta.`; stopVoice();}
+    };
     rec.onstop=async()=>{
       clearInterval(st.timer); stream.getTracks().forEach(t=>t.stop()); if(_voiceRec===st) _voiceRec=null;
       if(st.cancelled) return;
-      try{const url=await blobToAudioUrl(new Blob(st.chunks,{type:rec.mimeType||mime||"audio/webm"})); builderVoice=url; renderVoiceField(); renderBuilderPreview();}
+      try{const url=await blobToAudioUrl(new Blob(st.chunks,{type:rec.mimeType||mime||"audio/webm"})); builderVoice=url; renderVoiceField(st.note); renderBuilderPreview();}
       catch(e){renderVoiceField(e.message||"No se pudo guardar el audio.");}
     };
-    _voiceRec=st; rec.start();
-    st.timer=setInterval(()=>{const sec=Math.floor((Date.now()-st.t0)/1000), el=$("#voiceSecs"); if(el) el.textContent=sec; if(sec>=VOICE_MAX) stopVoice();},250);
+    _voiceRec=st; rec.start(1000);
+    st.timer=setInterval(()=>{const sec=Math.floor((Date.now()-st.t0)/1000), el=$("#voiceSecs"); if(el) el.textContent=sec; if(sec>=VOICE_MAX){if(!st.note) st.note="Llegaste al máximo de 2 minutos."; stopVoice();}},250);
     renderVoiceField();
   }catch(e){renderVoiceField("No pude acceder al micrófono. Podés subir un audio ya grabado.");}
 }
